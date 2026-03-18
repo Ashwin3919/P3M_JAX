@@ -13,5 +13,6 @@
     "OmegaL": 0.69,
     "save_vtk": true,
     "vtk_freq": 20,
-    "save_power_spectrum": true
+    "save_power_spectrum": true,
+    "precision": "float32"
 }

@@ -24,7 +24,7 @@ def md_cic_2d(shape: Tuple[int, int], pos: jnp.ndarray) -> jnp.ndarray:
     weights_01 = (1 - f0) * f1
     weights_11 = f0 * f1
 
-    flat_tgt = jnp.zeros(N0 * N1, dtype=jnp.float64)
+    flat_tgt = jnp.zeros(N0 * N1, dtype=pos.dtype)
     flat_tgt = flat_tgt.at[flat(idx0,     idx1    )].add(weights_00)
     flat_tgt = flat_tgt.at[flat(idx0 + 1, idx1    )].add(weights_10)
     flat_tgt = flat_tgt.at[flat(idx0,     idx1 + 1)].add(weights_01)

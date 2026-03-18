@@ -3,6 +3,7 @@ import argparse
 import os
 import time
 import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from functools import partial
 import numpy as np
@@ -20,15 +21,29 @@ from src.utils.config_parser import load_config, get_results_dir
 from src.utils.io import write_vtk_particles, write_vtk_density
 from src.utils.analysis import compute_power_spectrum, append_to_csv, plot_power_spectrum_evolution
 
-# Enable 64-bit precision in JAX
-jax.config.update("jax_enable_x64", True)
+_DTYPE_MAP = {
+    'float16': jnp.float16,
+    'float32': jnp.float32,
+    'float64': jnp.float64,
+}
 
 def run_simulation(config_path):
     # 1. Load configuration
     config = load_config(config_path)
     results_dir = get_results_dir(config['name'])
-    
+
+    # Resolve precision
+    precision_str = config.get('precision', 'float64')
+    if precision_str not in _DTYPE_MAP:
+        raise ValueError(f"precision must be one of {list(_DTYPE_MAP)}, got '{precision_str}'")
+    dtype = _DTYPE_MAP[precision_str]
+    if precision_str == 'float64':
+        jax.config.update("jax_enable_x64", True)
+    if precision_str == 'float16':
+        print("WARNING: float16 precision is numerically unstable for N-body simulations. Use float32 or float64.")
+
     print(f"=== Starting N-Body Simulation: {config['name']} ===")
+    print(f"Precision: {precision_str}")
     print(f"Results will be saved to: {results_dir}")
     
     # 2. Setup cosmology
@@ -46,10 +61,14 @@ def run_simulation(config_path):
     # 4. Generate Initial Conditions
     print("Generating initial conditions...")
     Power_spectrum = (Power_law(config['power_index']) * Scale(B_m, 0.2) * Cutoff(B_m))
-    phi = garfield(B_m, Power_spectrum, Potential(), config['seed']) * config['A']
-    
+    phi = (garfield(B_m, Power_spectrum, Potential(), config['seed']) * config['A']).astype(dtype)
+
     za = Zeldovich(B_m, force_box, cosmo, phi)
     state = za.state(config['a_start'])
+    state = state._replace(
+        position=state.position.astype(dtype),
+        momentum=state.momentum.astype(dtype),
+    )
     
     # 5. Setup System and Integrator
     system = PoissonVlasov(force_box, cosmo, za.particle_mass)
