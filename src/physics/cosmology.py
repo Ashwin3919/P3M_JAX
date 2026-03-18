@@ -10,7 +10,7 @@ class Cosmology:
 
     @property
     def OmegaK(self):
-        return 1 - self.OmegaM - self.OmegaL
+        return 1.0 - self.OmegaM - self.OmegaL
 
     @property
     def G(self):
@@ -32,6 +32,6 @@ class Cosmology:
             return factor * self.da(a) / a * \
                 quad(lambda b: float(self.da(b)) ** (-3), 0.00001, a)[0] + 0.00001
 
-# Standard cosmologies
-LCDM = Cosmology(68.0, 0.31, 0.69)
-EdS = Cosmology(70.0, 1.0, 0.0)
+# Presets for internal reference
+LCDM_PRESET = Cosmology(68.0, 0.31, 0.69)
+EDS_PRESET = Cosmology(70.0, 1.0, 0.0)

@@ -8,5 +8,10 @@
     "dt": 0.02,
     "power_index": -0.5,
     "live_plot": false,
-    "cosmology": "EdS"
+    "H0": 70.0,
+    "OmegaM": 1.0,
+    "OmegaL": 0.0,
+    "save_vtk": true,
+    "vtk_freq": 10,
+    "save_power_spectrum": true
 }

@@ -8,5 +8,10 @@
     "dt": 0.015,
     "power_index": -0.5,
     "live_plot": false,
-    "cosmology": "LCDM"
+    "H0": 68.0,
+    "OmegaM": 0.31,
+    "OmegaL": 0.69,
+    "save_vtk": true,
+    "vtk_freq": 20,
+    "save_power_spectrum": true
 }

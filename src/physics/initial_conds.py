@@ -1,6 +1,6 @@
 import jax.numpy as jnp
-from solver.state import State
-from core.ops import gradient_2nd_order
+from src.solver.state import State
+from src.core.ops import gradient_2nd_order
 
 def a2r(B, X):
     """Convert array to particles"""

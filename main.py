@@ -5,17 +5,20 @@ import time
 import jax
 import matplotlib.pyplot as plt
 from functools import partial
+import numpy as np
 
-# Import custom modules
-from core.box import Box
-from core.filters import Power_law, Scale, Cutoff, Potential
-from core.ops import garfield
-from physics.cosmology import LCDM, EdS
-from physics.system import PoissonVlasov
-from physics.initial_conds import Zeldovich
-from solver.integrator import leap_frog, iterate_step
-from utils.plotting import plot_density_evolution, plot_particles
-from utils.config_parser import load_config, get_results_dir
+# Import custom modules (updated for src/ structure)
+from src.core.box import Box
+from src.core.filters import Power_law, Scale, Cutoff, Potential
+from src.core.ops import garfield, md_cic_2d
+from src.physics.cosmology import Cosmology
+from src.physics.system import PoissonVlasov
+from src.physics.initial_conds import Zeldovich
+from src.solver.integrator import iterate_step_scan
+from src.utils.plotting import plot_density_evolution, plot_particles
+from src.utils.config_parser import load_config, get_results_dir
+from src.utils.io import write_vtk_particles, write_vtk_density
+from src.utils.analysis import compute_power_spectrum, append_to_csv, plot_power_spectrum_evolution
 
 # Enable 64-bit precision in JAX
 jax.config.update("jax_enable_x64", True)
@@ -29,56 +32,83 @@ def run_simulation(config_path):
     print(f"Results will be saved to: {results_dir}")
     
     # 2. Setup cosmology
-    cosmo_map = {"LCDM": LCDM, "EdS": EdS}
-    cosmo = cosmo_map.get(config.get('cosmology', 'EdS'), EdS)
+    cosmo = Cosmology(
+        H0=config.get('H0', 70.0),
+        OmegaM=config.get('OmegaM', 1.0),
+        OmegaL=config.get('OmegaL', 0.0)
+    )
+    print(f"Cosmology: H0={cosmo.H0}, OmegaM={cosmo.OmegaM}, OmegaL={cosmo.OmegaL}")
     
     # 3. Setup boxes
     B_m = Box(2, config['N'], config['L'])
     force_box = Box(2, config['N'] * 2, B_m.L)
     
     # 4. Generate Initial Conditions
-    print("Generating initial conditions using Zeldovich approximation...")
-    Power_spectrum = (Power_law(config['power_index']) * 
-                      Scale(B_m, 0.2) * 
-                      Cutoff(B_m))
+    print("Generating initial conditions...")
+    Power_spectrum = (Power_law(config['power_index']) * Scale(B_m, 0.2) * Cutoff(B_m))
     phi = garfield(B_m, Power_spectrum, Potential(), config['seed']) * config['A']
     
     za = Zeldovich(B_m, force_box, cosmo, phi)
     state = za.state(config['a_start'])
     
     # 5. Setup System and Integrator
-    system = PoissonVlasov(force_box, cosmo, za.particle_mass, 
-                           live_plot=config.get('live_plot', False))
-    state.live_plot = config.get('live_plot', False)
-    if state.live_plot:
-        state.fig = system.fig
-
-    stepper = partial(leap_frog, config['dt'], system)
+    system = PoissonVlasov(force_box, cosmo, za.particle_mass)
+    n_steps = int((config['a_end'] - config['a_start']) / config['dt'])
     
-    # 6. Run Simulation
-    print(f"Starting simulation with {len(state.position)} particles...")
+    # 6. Run JIT-compiled Simulation
+    run_sim_jit = jax.jit(partial(iterate_step_scan, system, dt=config['dt'], n_steps=n_steps))
+    
+    print(f"Running simulation for {n_steps} steps...")
     start_time = time.time()
+    final_state, all_states = run_sim_jit(state)
+    jax.block_until_ready(final_state)
     
-    states = iterate_step(stepper, lambda s: s.time > config['a_end'], state)
-    
-    runtime = (time.time() - start_time) / 60
-    print(f"\nSimulation completed in {runtime:.2f} minutes!")
+    runtime = time.time() - start_time
+    print(f"Simulation completed in {runtime:.2f} seconds!")
     
     # 7. Visualization & Storage
-    print("Saving final analysis plots...")
+    print("Saving analysis results...")
     key_times = [config['a_start'], (config['a_start'] + config['a_end']) / 2, config['a_end']]
     
-    plot_density_evolution(states, B_m, key_times, 
+    # Standard plots
+    plot_density_evolution(all_states, B_m, key_times, 
                            save_path=os.path.join(results_dir, 'density_evolution.png'))
-    plot_particles(states, B_m, key_times, 
+    plot_particles(all_states, B_m, key_times, 
                    save_path=os.path.join(results_dir, 'particle_evolution.png'))
     
-    print(f"Results saved successfully in {results_dir}")
+    # Analysis & VTK
+    ps_csv_path = os.path.join(results_dir, "power_spectrum.csv")
+    
+    # Save snapshots based on frequency or key times
+    if config.get('save_vtk') or config.get('save_power_spectrum'):
+        vtk_freq = config.get('vtk_freq', 10)
+        indices = np.unique(np.append(np.arange(0, n_steps, vtk_freq), n_steps - 1))
+        
+        for idx in indices:
+            a_val = float(all_states.time[idx])
+            pos_val = all_states.position[idx]
+            mom_val = all_states.momentum[idx]
+            
+            # Density for PS and VTK
+            x_grid = pos_val / B_m.res
+            rho = np.array(md_cic_2d(B_m.shape, x_grid) + 1.0)
+            
+            if config.get('save_vtk'):
+                write_vtk_particles(pos_val, mom_val, a_val, results_dir, config['name'])
+                write_vtk_density(rho, B_m, a_val, results_dir, config['name'])
+            
+            if config.get('save_power_spectrum'):
+                k, Pk = compute_power_spectrum(rho, B_m.L, particle_count=len(pos_val))
+                append_to_csv(ps_csv_path, int(idx), a_val, k, Pk)
+
+    if config.get('save_power_spectrum'):
+        print("Generating power spectrum evolution plot...")
+        plot_power_spectrum_evolution(ps_csv_path, os.path.join(results_dir, "power_spectrum.png"))
+    
+    print(f"Results saved in {results_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run modular P2M N-Body simulation.")
-    parser.add_argument("--config", type=str, default="configs/default.json",
-                        help="Path to the simulation configuration file.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/default.json")
     args = parser.parse_args()
-    
     run_simulation(args.config)

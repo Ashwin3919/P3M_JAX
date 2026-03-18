@@ -1,60 +1,48 @@
 # P2M-JAX N-Body Simulation
 
-A high-performance, modular 2D N-Body simulation using **JAX**. This project refactors Johan Hidding's implementation into a modular, config-driven architecture following Google's internal engineering standards for scientific computing.
+A high-performance, modular 2D N-Body simulation using **JAX**. This project uses a modern `src/` layout and a JIT-compiled, config-driven architecture for professional scientific computing.
 
 ## 🏗 Project Structure
 
-- **`main.py`**: The entry point. Loads config, initializes ICs, and runs the simulation.
-- **`core/`**: JAX-optimized kernels (CIC deposition, Force interpolation, Gaussian Random Fields).
-- **`physics/`**: Cosmological background (LCDM/EdS) and the Poisson-Vlasov system.
-- **`solver/`**: Generic Hamiltonian integration framework (Leap-frog).
-- **`configs/`**: JSON configuration files for different resolutions and seeds.
-- **`results/`**: Outputs (plots and data) are automatically stored here by config name.
-- **`utils/`**: Plotting and configuration parsing logic.
+- **`main.py`**: Entry point. Loads config and runs the JIT-compiled simulation loop.
+- **`src/`**: Core library code.
+  - **`core/`**: JAX kernels (CIC deposition, Force interpolation, GRFs).
+  - **`physics/`**: Cosmology parameters, Poisson-Vlasov Hamiltonian, and ICs.
+  - **`solver/`**: Immutable State management and `lax.scan` integrators.
+  - **`utils/`**: Plotting, Power Spectrum Analysis, and VTK IO.
+- **`configs/`**: JSON files for simulation parameters.
+- **`results/`**: Outputs (plots and VTK data) categorized by config name.
+- **`tests/`**: Unit tests for core simulation kernels.
 
 ## 🚀 Getting Started
 
 ### 1. Installation
-Ensure you have Python 3.9+ and install the requirements:
+Ensure you have Python 3.9+ and install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Running Simulations
-Run the default simulation (128 res, EdS cosmology):
+Run with a specific configuration:
 ```bash
 python main.py --config configs/default.json
 ```
 
-Run a high-resolution simulation (256 res, LCDM cosmology):
+### 3. Running Tests
+Verify the core operations:
 ```bash
-python main.py --config configs/high_res.json
+pytest tests/
 ```
 
-### 3. Creating New Configs
-To run a custom simulation, create a new JSON file in `configs/`:
-```json
-{
-    "N": 64,
-    "L": 50.0,
-    "A": 8.0,
-    "seed": 123,
-    "a_start": 0.02,
-    "a_end": 1.0,
-    "dt": 0.02,
-    "power_index": -0.5,
-    "cosmology": "EdS"
-}
-```
-Then run it with:
-```bash
-python main.py --config configs/my_custom_sim.json
-```
+## 📊 Outputs & Analysis
 
-## 📊 Results
-Plots for density evolution and particle positions are saved automatically in:
-`results/<config_name>/density_evolution.png`
-`results/<config_name>/particle_evolution.png`
+### VTK Visualization
+If enabled in config, binary VTK files (including momenta) are saved in:
+- `results/<config>/vtk/particles/`
+- `results/<config>/vtk/density/`
+
+### Power Spectrum
+The simulation computes the matter power spectrum evolution, saving a CSV and a publication-quality plot using LaTeX-style fonts (`STIX`).
 
 ---
-*Developed for P2M/P3M research workflows.*
+*Developed for high-performance cosmological P2M/P3M research.*

@@ -1,0 +1,20 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Simulation Results
+results/*
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# JAX/NVIDIA Cache
+.jax_cache/
+.nv/
+
+# OS Files
+.DS_Store
+Thumbs.db
