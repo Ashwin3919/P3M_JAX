@@ -1,8 +1,9 @@
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 from src.solver.state import State, HamiltonianSystem
-from src.core.ops import md_cic_2d, Interp2D, gradient_2nd_order
+from src.core.ops import md_cic_nd, InterpND, gradient_2nd_order
 from src.core.filters import Potential
+
+
 class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
     def __init__(self, box, cosmology, particle_mass):
         self.box = box
@@ -16,21 +17,17 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         return s.momentum / (s.time ** 2 * da)
 
     def momentumEquation(self, s: State[jnp.ndarray]) -> jnp.ndarray:
-        a = s.time
+        a  = s.time
         da = self.cosmology.da(a)
         x_grid = s.position / self.box.res
 
-        # Compute density field using JAX CIC (local variable)
-        delta = md_cic_2d(self.box.shape, x_grid)
-        delta = delta * self.particle_mass
-        delta = delta - 1.0
+        delta = md_cic_nd(self.box.shape, x_grid) * self.particle_mass - 1.0
+        phi   = jnp.fft.ifftn(jnp.fft.fftn(delta) * self.kernel).real * self.cosmology.G / a
 
-        # Solve Poisson equation using precomputed kernel
-        delta_f = jnp.fft.fftn(delta)
-        phi = jnp.fft.ifftn(delta_f * self.kernel).real * self.cosmology.G / a
-
-        acc_x = Interp2D(gradient_2nd_order(phi, 0))
-        acc_y = Interp2D(gradient_2nd_order(phi, 1))
-        acc = jnp.c_[acc_x(x_grid), acc_y(x_grid)] / self.box.res
+        acc_components = [
+            InterpND(gradient_2nd_order(phi, i))(x_grid)
+            for i in range(self.box.dim)
+        ]
+        acc = jnp.stack(acc_components, axis=-1) / self.box.res
 
         return -acc / da

@@ -25,7 +25,7 @@ def compute_power_spectrum(
     """
     density = np.asarray(density, dtype=np.float64)
     N = density.shape[0]
-    ndim = 2  # Fixed to 2D
+    ndim = density.ndim
     V = box_size**ndim
 
     # Density contrast
@@ -33,18 +33,19 @@ def compute_power_spectrum(
     delta_k = np.fft.fftn(delta) / N**ndim
     Pk2d = np.abs(delta_k)**2 * V
 
-    # wavenumber grid
+    # wavenumber grid (works for any ndim)
     ki = np.fft.fftfreq(N, d=box_size/N) * 2*np.pi
-    kx, ky = np.meshgrid(ki, ki, indexing="ij")
-    k_mag = np.sqrt(kx**2 + ky**2).ravel()
-    
+    grids = np.meshgrid(*[ki]*ndim, indexing="ij")
+    k_mag = np.sqrt(sum(g**2 for g in grids)).ravel()
+
     Pk2d = Pk2d.ravel()
 
     # ---- CIC deconvolution ----
     dx = box_size / N
-    Wx = np.sinc(kx*dx/(2*np.pi))
-    Wy = np.sinc(ky*dx/(2*np.pi))
-    W = (Wx * Wy)**2
+    W = np.ones_like(grids[0])
+    for g in grids:
+        W *= np.sinc(g * dx / (2 * np.pi))
+    W = W**2
     W = W.ravel()
 
     # Correct for CIC
@@ -63,7 +64,7 @@ def compute_power_spectrum(
 
     k_centers_list = []
     Pk_list = []
-    
+
     for i in range(n_bins):
         mask = (k_mag >= edges[i]) & (k_mag < edges[i+1])
         if np.sum(mask) >= MIN_MODES:

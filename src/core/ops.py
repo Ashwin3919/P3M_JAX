@@ -1,67 +1,83 @@
+import itertools
 import jax
 import jax.numpy as jnp
 from functools import partial
+from math import prod as math_prod
 from typing import Tuple
 
 @partial(jax.jit, static_argnums=(0,))
-def md_cic_2d(shape: Tuple[int, int], pos: jnp.ndarray) -> jnp.ndarray:
+def md_cic_nd(shape, pos):
     """
-    JAX-based cloud-in-cell mass deposition.
-    shape is static so JAX can build the zero array at trace time.
-    Returns the deposited density array.
+    CIC mass deposition for arbitrary dimensions.
+
+    shape is static so JAX can build zero arrays and unroll the corner
+    loop at compile time (2^dim iterations).
+
+    Parameters
+    ----------
+    shape : tuple of int  — grid shape, e.g. (N, N) or (N, N, N)
+    pos   : (n_particles, dim) float array in grid units
+
+    Returns
+    -------
+    density array with the given shape
     """
-    N0, N1 = shape
-    idx0 = jnp.floor(pos[:, 0]).astype(jnp.int32)
-    idx1 = jnp.floor(pos[:, 1]).astype(jnp.int32)
-    f0 = pos[:, 0] - idx0
-    f1 = pos[:, 1] - idx1
+    dim = len(shape)
+    N = jnp.array(shape)
+    idx = jnp.floor(pos).astype(jnp.int32)   # (n_particles, dim)
+    f   = pos - idx                            # fractional offsets
 
-    def flat(i, j):
-        return (i % N0) * N1 + (j % N1)
+    strides = jnp.array([math_prod(shape[d + 1:]) for d in range(dim)])
+    flat_tgt = jnp.zeros(math_prod(shape), dtype=pos.dtype)
 
-    weights_00 = (1 - f0) * (1 - f1)
-    weights_10 = f0 * (1 - f1)
-    weights_01 = (1 - f0) * f1
-    weights_11 = f0 * f1
-
-    flat_tgt = jnp.zeros(N0 * N1, dtype=pos.dtype)
-    flat_tgt = flat_tgt.at[flat(idx0,     idx1    )].add(weights_00)
-    flat_tgt = flat_tgt.at[flat(idx0 + 1, idx1    )].add(weights_10)
-    flat_tgt = flat_tgt.at[flat(idx0,     idx1 + 1)].add(weights_01)
-    flat_tgt = flat_tgt.at[flat(idx0 + 1, idx1 + 1)].add(weights_11)
+    for corner in itertools.product([0, 1], repeat=dim):
+        corner_arr = jnp.array(corner, dtype=jnp.int32)           # (dim,)
+        weights = jnp.prod(
+            jnp.where(jnp.array(corner) == 1, f, 1.0 - f), axis=-1  # (n_particles,)
+        )
+        flat_idx = (((idx + corner_arr) % N) * strides).sum(-1)   # (n_particles,)
+        flat_tgt = flat_tgt.at[flat_idx].add(weights)
 
     return flat_tgt.reshape(shape)
 
-class Interp2D:
-    """Bilinear interpolation"""
+
+class InterpND:
+    """N-dimensional trilinear (CIC-dual) interpolation."""
+
     def __init__(self, data):
         self.data = data
-        self.shape = data.shape
+        self.shape = jnp.array(data.shape)
+        self.dim = data.ndim
 
-    def __call__(self, x):
-        N0, N1 = self.shape
-        X1 = jnp.floor(x).astype(jnp.int32) % jnp.array([N0, N1])
-        X2 = jnp.ceil(x).astype(jnp.int32) % jnp.array([N0, N1])
-        xm = x % 1.0
-        xn = 1.0 - xm
+    def __call__(self, pos):
+        idx = jnp.floor(pos).astype(jnp.int32)   # (n, dim)
+        f   = pos - idx
 
-        f1 = self.data[X1[:, 0], X1[:, 1]]
-        f2 = self.data[X2[:, 0], X1[:, 1]]
-        f3 = self.data[X1[:, 0], X2[:, 1]]
-        f4 = self.data[X2[:, 0], X2[:, 1]]
+        result = jnp.zeros(pos.shape[0], dtype=self.data.dtype)
+        for corner in itertools.product([0, 1], repeat=self.dim):
+            corner_arr = jnp.array(corner, dtype=jnp.int32)
+            weights = jnp.prod(
+                jnp.where(jnp.array(corner) == 1, f, 1.0 - f), axis=-1
+            )
+            ci = (idx + corner_arr) % self.shape
+            cell_vals = self.data[tuple(ci[:, d] for d in range(self.dim))]
+            result = result + weights * cell_vals
+        return result
 
-        return (f1 * xn[:, 0] * xn[:, 1] +
-                f2 * xm[:, 0] * xn[:, 1] +
-                f3 * xn[:, 0] * xm[:, 1] +
-                f4 * xm[:, 0] * xm[:, 1])
+
+# Backward-compatible aliases so existing imports and tests are unaffected
+md_cic_2d = md_cic_nd
+Interp2D  = InterpND
+
 
 def gradient_2nd_order(F, i):
-    """Second-order finite difference gradient"""
+    """Second-order finite difference gradient along axis i."""
     return (1. / 12 * jnp.roll(F, 2, axis=i) - 2. / 3 * jnp.roll(F, 1, axis=i) +
             2. / 3 * jnp.roll(F, -1, axis=i) - 1. / 12 * jnp.roll(F, -2, axis=i))
 
+
 def garfield(B, P, T_filt, seed=None):
-    """Generate Gaussian random field"""
+    """Generate Gaussian random field."""
     if seed is not None:
         key = jax.random.PRNGKey(seed)
     else:

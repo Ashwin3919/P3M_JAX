@@ -11,6 +11,8 @@ pip install -r requirements.txt
 # Run simulation (specify config)
 python main.py --config configs/default.json
 python main.py --config configs/high_res.json
+python main.py --config configs/3d_default.json
+python main.py --config configs/3d_heigh_res.json
 
 # Run all tests
 pytest tests/
@@ -19,9 +21,19 @@ pytest tests/
 pytest tests/test_core.py::test_md_cic_2d_mass_conservation
 ```
 
+## Generalisation Roadmap — Status
+
+Phase 1 (dimension-agnostic infrastructure): DONE
+Phase 2 (ND CIC deposition and interpolation): DONE
+Phase 3 (Zeldovich ICs for 3D): DONE
+Phase 4 (PoissonVlasov 3D PM solver): DONE
+Phase 5 (TSC mass assignment + deconvolved Green's function): NOT DONE
+Phase 6 (short-range PP forces via Morton Z-curve + sliding window): NOT DONE
+Phase 7 (adaptive timestepping via lax.while_loop): NOT DONE
+
 ## Architecture
 
-This is a 2D P3M (Particle-Particle-Particle-Mesh) cosmological N-body simulation using JAX for GPU/CPU acceleration.
+This is an N-dimensional (2D and 3D) P3M (Particle-Particle-Particle-Mesh) cosmological N-body simulation using JAX for GPU/CPU acceleration. The `dim` parameter in the config controls dimensionality throughout.
 
 ### Data Flow
 
@@ -44,7 +56,7 @@ Config JSON → Cosmology + Box setup → Zeldovich ICs → PoissonVlasov system
 | Module | Role |
 |--------|------|
 | `src/core/box.py` | `Box` class: periodic domain, FFT wavenumber grids (`K`, `k`), Nyquist freq |
-| `src/core/ops.py` | CIC mass deposition `md_cic_2d()`, bilinear interpolation `Interp2D`, 2nd-order gradients, Gaussian random field `garfield()` |
+| `src/core/ops.py` | ND CIC mass deposition `md_cic_nd()` (2D alias: `md_cic_2d`), ND interpolation `InterpND` (2D alias: `Interp2D`), 2nd-order gradients, Gaussian random field `garfield()` |
 | `src/core/filters.py` | Composable Fourier-space filters: `Power_law`, `Scale`, `Cutoff`, `Potential` (-1/k²). Support operator overloading (`*`, `+`, `^`, `~`) |
 | `src/physics/cosmology.py` | `Cosmology` dataclass: H(a), linear growth factor D(a). Presets: `LCDM_PRESET` (Planck 2018), `EDS_PRESET` |
 | `src/physics/system.py` | `PoissonVlasov`: equations of motion in comoving coordinates. Solves Poisson via FFT with precomputed potential kernel |
@@ -84,7 +96,8 @@ Results appended to `results/{config_name}/power_spectrum.csv` with scale factor
 
 ```json
 {
-  "N": 128,              // particles per side (N² total)
+  "dim": 2,              // spatial dimension: 2 or 3
+  "N": 128,              // particles per side (N^dim total)
   "L": 50,               // box size [Mpc/h]
   "a_start": 0.02,       // initial scale factor
   "a_end": 1.0,          // final scale factor

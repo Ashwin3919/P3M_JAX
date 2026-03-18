@@ -1,6 +1,6 @@
 {
-    "dim": 2,
-    "N": 128,
+    "dim": 3,
+    "N": 64,
     "L": 50.0,
     "A": 10.0,
     "seed": 4,
@@ -13,7 +13,8 @@
     "OmegaM": 1.0,
     "OmegaL": 0.0,
     "save_vtk": true,
-    "vtk_freq": 10,
     "save_power_spectrum": true,
-    "precision": "float64"
+    "precision": "float32",
+    "mass_assignment": "cic",
+    "timestepping": "fixed"
 }

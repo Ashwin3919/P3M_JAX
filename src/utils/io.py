@@ -3,9 +3,12 @@ import numpy as np
 from pathlib import Path
 
 def _to_xyz(data):
-    """Convert 2D (N, 2) data to 3D (N, 3) for VTK by adding z=0"""
+    """Ensure particle data has shape (N, 3), padding z=0 for 2D input."""
+    data = np.asarray(data)
+    if data.shape[1] == 3:
+        return data.astype(np.float32)
     n = data.shape[0]
-    out = np.zeros((n, 3), dtype=data.dtype)
+    out = np.zeros((n, 3), dtype=np.float32)
     out[:, :2] = data
     return out
 
@@ -14,7 +17,8 @@ def write_vtk_particles(pos, mom, a_value, results_dir, config_name):
     vtk_particles_dir = os.path.join(results_dir, 'vtk', 'particles')
     os.makedirs(vtk_particles_dir, exist_ok=True)
     
-    filename = f"{config_name}_particles_a{a_value:.3f}.vtk"
+    a_str = f"{a_value:.3f}".replace('.', '')
+    filename = f"{config_name}_particles_a{a_str}.vtk"
     filepath = Path(os.path.join(vtk_particles_dir, filename))
 
     # Convert 2D JAX/NumPy arrays to 3D NumPy for VTK
@@ -50,31 +54,40 @@ def write_vtk_particles(pos, mom, a_value, results_dir, config_name):
     return str(filepath)
 
 def write_vtk_density(rho, box, a_value, results_dir, config_name):
-    """Write density field to VTK (Structured Points) in vtk/density/"""
+    """Write density field to VTK (Structured Points) in vtk/density/.
+
+    Works for both 2D (N×N) and 3D (N×N×N) density arrays.
+    """
     vtk_density_dir = os.path.join(results_dir, 'vtk', 'density')
     os.makedirs(vtk_density_dir, exist_ok=True)
-    
-    filename = f"{config_name}_density_a{a_value:.3f}.vtk"
+
+    a_str = f"{a_value:.3f}".replace('.', '')
+    filename = f"{config_name}_density_a{a_str}.vtk"
     filepath = os.path.join(vtk_density_dir, filename)
-    
-    nx, ny = rho.shape
+
+    rho = np.asarray(rho)
     res = box.res
-    
-    # Keeping density as ASCII for easier debugging, but structuring it for Paraview
+
+    if rho.ndim == 2:
+        nx, ny = rho.shape
+        nz = 1
+        spacing = f"{res} {res} 0"
+    else:
+        nx, ny, nz = rho.shape
+        spacing = f"{res} {res} {res}"
+
     with open(filepath, 'w') as f:
         f.write("# vtk DataFile Version 3.0\n")
         f.write(f"Density field at a={a_value:.3f}\n")
         f.write("ASCII\n")
         f.write("DATASET STRUCTURED_POINTS\n")
-        f.write(f"DIMENSIONS {nx} {ny} 1\n")
+        f.write(f"DIMENSIONS {nx} {ny} {nz}\n")
         f.write(f"ORIGIN 0 0 0\n")
-        f.write(f"SPACING {res} {res} 0\n")
-        f.write(f"POINT_DATA {nx * ny}\n")
+        f.write(f"SPACING {spacing}\n")
+        f.write(f"POINT_DATA {nx * ny * nz}\n")
         f.write("SCALARS density float 1\n")
         f.write("LOOKUP_TABLE default\n")
-        
-        flat_rho = np.array(rho).flatten()
-        for val in flat_rho:
+        for val in rho.flatten():
             f.write(f"{val}\n")
-            
+
     return filepath
