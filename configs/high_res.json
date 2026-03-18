@@ -1,0 +1,12 @@
+{
+    "N": 256,
+    "L": 50.0,
+    "A": 12.0,
+    "seed": 42,
+    "a_start": 0.02,
+    "a_end": 1.0,
+    "dt": 0.015,
+    "power_index": -0.5,
+    "live_plot": false,
+    "cosmology": "LCDM"
+}

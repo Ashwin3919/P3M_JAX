@@ -1,0 +1,12 @@
+{
+    "N": 128,
+    "L": 50.0,
+    "A": 10.0,
+    "seed": 4,
+    "a_start": 0.02,
+    "a_end": 1.0,
+    "dt": 0.02,
+    "power_index": -0.5,
+    "live_plot": false,
+    "cosmology": "EdS"
+}
