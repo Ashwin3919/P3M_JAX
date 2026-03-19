@@ -1,6 +1,6 @@
 # P3M-JAX: Cosmological N-Body Simulation
 
-# Ashwin Shirke
+**Ashwin Shirke**
 
 ![3D Visual Run (N=144)](op/144.png)
 
