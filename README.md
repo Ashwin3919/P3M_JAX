@@ -1,15 +1,16 @@
-# P3M-JAX: Cosmological N-Body Simulation
-
-**Ashwin Shirke**
-
-![3D Visual Run (N=144)](op/144.png)
-
-Reference config: `configs/3d_visual.json`.
-Model used: flat LambdaCDM-like cosmology with `H0 = 70.0`, `OmegaM = 0.6`, `OmegaL = 0.4` (matter-rich expansion history).
+# P3M-JAX: A JAX-Accelerated Cosmological N-Body Simulation
 
 A JAX-accelerated, dimension-agnostic Particle-Particle-Particle-Mesh (P3M) N-body code for cosmological simulations. Supports 2D and 3D domains, pure PM and full P3M force computation, and fixed or CFL-adaptive time-stepping — all controlled by a single JSON config file.
 
 Runs without modification on CPU, NVIDIA GPU, and Apple Silicon.
+
+**Ashwin Shirke**
+
+![3D Visual Run (N=144)](op/144_title.png)
+
+Reference config: `configs/3d_visual.json`.
+Model used: flat LambdaCDM-like cosmology with `H0 = 70.0`, `OmegaM = 0.6`, `OmegaL = 0.4` (matter-rich expansion history).
+
 
 ---
 
