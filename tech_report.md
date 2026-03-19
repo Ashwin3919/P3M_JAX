@@ -10,6 +10,15 @@ We present P3M-JAX, a cosmological N-body simulation framework implementing the 
 
 ---
 
+
+<video src="op/144.mp4" controls muted loop playsinline width="100%"></video>
+
+[Download simulation video (MP4)](op/144.mp4)
+
+Reference config: `configs/3d_visual.json`.
+Model used: flat LambdaCDM-like cosmology with `H0 = 70.0`, `OmegaM = 0.6`, `OmegaL = 0.4` (matter-rich expansion history).
+
+---
 ## 1. Introduction
 
 Cosmological N-body simulations are the primary theoretical tool for studying the formation of large-scale structure in the universe. Beginning with the work of Hockney & Eastwood (1988) and Efstathiou et al. (1985), successive generations of codes — from GADGET (Springel 2005) to AREPO (Springel 2010) and beyond — have grown in complexity to incorporate hydrodynamics, star formation, feedback, and multi-scale force decomposition. For pedagogical, methodological, and rapid-prototyping purposes, however, a clean, minimal, and hardware-portable implementation remains valuable.

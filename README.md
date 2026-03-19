@@ -1,5 +1,12 @@
 # P3M-JAX: Cosmological N-Body Simulation
 
+# Ashwin Shirke
+
+![3D Visual Run (N=144)](op/144.png)
+
+Reference config: `configs/3d_visual.json`.
+Model used: flat LambdaCDM-like cosmology with `H0 = 70.0`, `OmegaM = 0.6`, `OmegaL = 0.4` (matter-rich expansion history).
+
 A JAX-accelerated, dimension-agnostic Particle-Particle-Particle-Mesh (P3M) N-body code for cosmological simulations. Supports 2D and 3D domains, pure PM and full P3M force computation, and fixed or CFL-adaptive time-stepping — all controlled by a single JSON config file.
 
 Runs without modification on CPU, NVIDIA GPU, and Apple Silicon.
@@ -153,3 +160,18 @@ pytest tests/ -v
 **Time integration:** KDK leapfrog in scale factor `a`. Fixed stepping uses `jax.lax.scan`; adaptive stepping uses `jax.lax.while_loop` with a CFL condition estimated from the maximum particle velocity.
 
 **Power spectrum:** Annular k-bin averaging with CIC window deconvolution (P_corr = P / W²) and Poisson shot noise subtraction.
+
+---
+
+![Density Evolution (High Resolution)](op/density_evolution.png)
+
+Reference config: `configs/high_res.json`.
+Model used: standard flat LambdaCDM cosmology with `H0 = 68.0`, `OmegaM = 0.31`, `OmegaL = 0.69`.
+
+<video src="op/2_cropped_fast.mp4" controls muted loop playsinline width="100%"></video>
+
+[Download video (MP4): 2_cropped_fast](op/2_cropped_fast.mp4)
+
+<video src="op/3_cropped_fast.mp4" controls muted loop playsinline width="100%"></video>
+
+[Download video (MP4): 3_cropped_fast](op/3_cropped_fast.mp4)
