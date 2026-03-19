@@ -175,3 +175,23 @@ Model used: standard flat LambdaCDM cosmology with `H0 = 68.0`, `OmegaM = 0.31`,
 <video src="op/3_cropped_fast.mp4" controls muted loop playsinline width="100%"></video>
 
 [Download video (MP4): 3_cropped_fast](op/3_cropped_fast.mp4)
+
+---
+
+## Contributing
+
+Contributions are welcome. Feel free to open a pull request for improvements, new features, documentation updates, or performance fixes.
+
+If you find a bug, please report it and submit a fix through a pull request when possible.
+
+---
+
+## Project Status
+
+This is an experimental research codebase under active development. Interfaces, defaults, and implementation details may change as the project evolves.
+
+---
+
+## License
+
+This project is released under the MIT License. See `LICENSE` for details.

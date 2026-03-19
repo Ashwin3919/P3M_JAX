@@ -6,7 +6,9 @@
 
 ## Abstract
 
-We present P3M-JAX, a cosmological N-body simulation framework implementing the Particle-Particle-Particle-Mesh (P3M) algorithm in the JAX numerical computing library. The code solves the collisionless Boltzmann equation coupled to Poisson's equation in an expanding Friedmann-Lemaître-Robertson-Walker (FLRW) universe, using comoving coordinates and the Kick-Drift-Kick (KDK) leapfrog integrator. The implementation is fully dimension-agnostic, supporting two-dimensional and three-dimensional domains via a single `dim` parameter with no code duplication. The Zeldovich approximation generates self-consistent initial conditions from a user-specified primordial power spectrum. Force computation supports two runtime-selectable modes: a pure Particle-Mesh (PM) mode using Cloud-in-Cell (CIC) deposition, FFT-based Poisson solution, second-order finite-difference gradient, and bilinear/trilinear force interpolation; and a full P3M mode that augments the PM long-range force with a short-range direct particle-particle correction using a Morton Z-curve sorted sliding window and an error-function force-splitting kernel. Time integration supports both fixed $\Delta a$ stepping via `jax.lax.scan` and a CFL-adaptive scheme via `jax.lax.while_loop`, which automatically refines the timestep during structure formation. Robustness features include per-step NaN/Inf detection, comprehensive config value validation, and an OOM guard for large trajectory stacking. JAX's XLA compilation delivers hardware-accelerated performance on CPU, GPU, and Apple Silicon without platform-specific code. Outputs include particle and density snapshots in Legacy VTK format and the matter power spectrum $P(k)$, corrected for CIC window function aliasing and Poisson shot noise. The framework is validated by 54 automated tests spanning unit, integration, and physics correctness checks.
+This code "P3M-JAX", a cosmological N-body simulation framework implementing the Particle-Particle-Particle-Mesh (P3M) algorithm in the JAX numerical computing library. The code solves the collisionless Boltzmann equation coupled to Poisson's equation in an expanding Friedmann-Lemaître-Robertson-Walker (FLRW) universe, using comoving coordinates and the Kick-Drift-Kick (KDK) leapfrog integrator. The implementation is fully dimension-agnostic, supporting two-dimensional and three-dimensional domains via a single `dim` parameter with no code duplication. The Zeldovich approximation generates self-consistent initial conditions from a user-specified primordial power spectrum. Force computation supports two runtime-selectable modes: a pure Particle-Mesh (PM) mode using Cloud-in-Cell (CIC) deposition, FFT-based Poisson solution, second-order finite-difference gradient, and bilinear/trilinear force interpolation; and a full P3M mode that augments the PM long-range force with a short-range direct particle-particle correction using a Morton Z-curve sorted sliding window and an error-function force-splitting kernel. Time integration supports both fixed $\Delta a$ stepping via `jax.lax.scan` and a CFL-adaptive scheme via `jax.lax.while_loop`, which automatically refines the timestep during structure formation. Robustness features include per-step NaN/Inf detection, comprehensive config value validation, and an OOM guard for large trajectory stacking. JAX's XLA compilation delivers hardware-accelerated performance on CPU, GPU, and Apple Silicon without platform-specific code. Outputs include particle and density snapshots in Legacy VTK format and the matter power spectrum $P(k)$, corrected for CIC window function aliasing and Poisson shot noise. The framework is validated by 54 automated tests spanning unit, integration, and physics correctness checks.
+
+This codebase is currently experimental and under active development. The implementation is suitable for research prototyping and educational use, while interfaces and defaults may evolve as validation and feature work continue.
 
 ---
 
@@ -691,6 +693,8 @@ Organised into seven test classes. Each test checks a specific physical property
 
 ## References
 
+Hidding, J., *2D N-Body Simulation*, https://jhidding.github.io/nbody2d/ (project starting point; accessed 2026-01-10)
+
 Efstathiou, G., Davis, M., White, S. D. M., & Frenk, C. S. 1985, ApJS, 57, 241
 
 Heath, D. J. 1977, MNRAS, 179, 351
@@ -706,3 +710,5 @@ Springel, V. 2005, MNRAS, 364, 1105
 Springel, V. 2010, MNRAS, 401, 791
 
 Zel'dovich, Ya. B. 1970, A&A, 5, 84
+
+
