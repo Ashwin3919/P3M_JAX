@@ -1,0 +1,24 @@
+{
+    "dim": 3,
+    "N": 144,
+    "L": 100.0,
+    "A": 10.0,
+    "seed": 7,
+    "a_start": 0.02,
+    "a_end": 1.32,
+    "timestepping": "adaptive",
+    "C_cfl": 0.3,
+    "dt_min": 0.0005,
+    "dt_max": 0.02,
+    "n_chunks": 6,              /*#"oom_threshold_gb": 10, for bigger size of chunks so final plots can be done*/
+    "power_index": -1.0,
+    "live_plot": false,
+    "H0": 70.0,
+    "OmegaM": 0.6,
+    "OmegaL": 0.4,
+    "save_vtk": true,
+    "vtk_freq": 1,
+    "save_power_spectrum": true,
+    "precision": "float32",
+    "solver": "pm"
+}

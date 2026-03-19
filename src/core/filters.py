@@ -19,6 +19,12 @@ class Filter:
             return Filter(lambda K: self.f(K) * other.f(K))
         elif isinstance(other, Number):
             return Filter(lambda K: other * self.f(K))
+        return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, Number):
+            return Filter(lambda K: other * self.f(K))
+        return NotImplemented
 
     def __pow__(self, n):
         return Filter(lambda K: self.f(K) ** n)
@@ -26,9 +32,14 @@ class Filter:
     def __truediv__(self, other):
         if isinstance(other, Number):
             return Filter(lambda K: self.f(K) / other)
+        elif isinstance(other, Filter):
+            return Filter(lambda K: self.f(K) / other.f(K))
+        return NotImplemented
 
     def __add__(self, other):
-        return Filter(lambda K: self.f(K) + other.f(K))
+        if isinstance(other, Filter):
+            return Filter(lambda K: self.f(K) + other.f(K))
+        return NotImplemented
 
     def __invert__(self):
         return Filter(lambda K: self.f(K).conj())
@@ -37,10 +48,12 @@ class Filter:
         return jnp.sqrt(self.cc(B, P, self))
 
     def cc(self, B, P, other):
-        return (~self * other * P)(B.K).sum().real / B.size * B.res ** 2
+        """Inner product <self | other> weighted by P, with correct d-dimensional volume element."""
+        return (~self * other * P)(B.K).sum().real / B.size * B.res ** B.dim
 
     def cf(self, B, other):
-        return ((~self)(B.K) * other).sum().real / B.size * B.res ** 2
+        """Cross-product of filter with a field array, with correct d-dimensional volume element."""
+        return ((~self)(B.K) * other).sum().real / B.size * B.res ** B.dim
 
 class Identity(Filter):
     def __init__(self):

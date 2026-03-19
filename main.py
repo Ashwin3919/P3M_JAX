@@ -4,7 +4,6 @@ import os
 import time
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 from functools import partial
 import numpy as np
 
@@ -56,15 +55,15 @@ def run_simulation(config_path):
 
     # 3. Setup boxes
     dim = config.get('dim', 2)
-    B_m = Box(dim, config['N'], config['L'])
-    force_box = Box(dim, config['N'] * 2, B_m.L)
+    B_mass = Box(dim, config['N'], config['L'])
+    force_box = Box(dim, config['N'] * 2, B_mass.L)
 
     # 4. Generate Initial Conditions
     print("Generating initial conditions...")
-    Power_spectrum = (Power_law(config['power_index']) * Scale(B_m, 0.2) * Cutoff(B_m))
-    phi = (garfield(B_m, Power_spectrum, Potential(), config['seed']) * config['A']).astype(dtype)
+    Power_spectrum = (Power_law(config['power_index']) * Scale(B_mass, 0.2) * Cutoff(B_mass))
+    phi = (garfield(B_mass, Power_spectrum, Potential(), config['seed']) * config['A']).astype(dtype)
 
-    za = Zeldovich(B_m, force_box, cosmo, phi)
+    za = Zeldovich(B_mass, force_box, cosmo, phi)
     state = za.state(config['a_start'])
     state = state._replace(
         position=state.position.astype(dtype),
@@ -103,7 +102,8 @@ def run_simulation(config_path):
 
     else:   # fixed dt
         dt = config['dt']
-        n_steps_raw = int((config['a_end'] - config['a_start']) / dt)
+        # Use round() to avoid float-division truncation (e.g. 0.98/0.02 → 48 not 49)
+        n_steps_raw = round((config['a_end'] - config['a_start']) / dt)
         n_steps  = (n_steps_raw // save_every) * save_every
         n_chunks = n_steps // save_every
         chunk_da = save_every * dt
@@ -130,20 +130,27 @@ def run_simulation(config_path):
         pos_np = np.array(state.position)
         mom_np = np.array(state.momentum)
 
+        # NaN/Inf guard — catches numerical blow-ups immediately
+        if not np.all(np.isfinite(pos_np)):
+            raise RuntimeError(
+                f"NaN/Inf detected in particle positions at chunk {chunk_idx + 1}, "
+                f"a = {a_val:.4f}. Consider reducing dt or the amplitude A."
+            )
+
         saved_times.append(a_val)
         saved_pos.append(pos_np)
         saved_mom.append(mom_np)
 
         # Density on mass grid for I/O
-        x_grid = state.position / B_m.res
-        rho = np.array(md_cic_nd(B_m.shape, x_grid) + 1.0)
+        x_grid = state.position / B_mass.res
+        rho = np.array(md_cic_nd(B_mass.shape, x_grid) + 1.0)
 
         if config.get('save_vtk') and chunk_idx % vtk_freq == 0:
             write_vtk_particles(pos_np, mom_np, a_val, results_dir, config['name'])
-            write_vtk_density(rho, B_m, a_val, results_dir, config['name'])
+            write_vtk_density(rho, B_mass, a_val, results_dir, config['name'])
 
         if config.get('save_power_spectrum'):
-            k, Pk = compute_power_spectrum(rho, B_m.L, particle_count=len(pos_np))
+            k, Pk = compute_power_spectrum(rho, B_mass.L, particle_count=len(pos_np))
             append_to_csv(ps_csv_path, chunk_idx, a_val, k, Pk)
 
         # Adaptive: print current dt alongside progress
@@ -156,27 +163,45 @@ def run_simulation(config_path):
     runtime = time.time() - start_time
     print(f"Simulation completed in {runtime:.2f} seconds!")
 
-    # Reconstruct all_states for end-of-run plots
-    all_states = State(
-        time=jnp.array(saved_times),
-        position=jnp.array(saved_pos),
-        momentum=jnp.array(saved_mom),
-    )
+    # Reconstruct all_states for end-of-run plots.
+    # Guard against OOM on large 3D runs: stacking all chunks into a single array
+    # can exceed available RAM (e.g. N=128^3, 50 chunks ≈ 25 GB). Skip plotting
+    # in that case and rely on the per-chunk VTK files instead.
+    _bytes_per_elem = 8 if precision_str == 'float64' else 4
+    _traj_bytes = len(saved_pos) * len(saved_pos[0]) * dim * 2 * _bytes_per_elem  # pos+mom
+    oom_threshold_gb = config.get('oom_threshold_gb', 4.0)
+    if _traj_bytes > oom_threshold_gb * 1024**3:
+        print(f"Trajectory too large to stack ({_traj_bytes / 1024**3:.1f} GB > "
+              f"{oom_threshold_gb} GB). Skipping end-of-run plots.")
+        if config.get('save_power_spectrum'):
+            _save_ps_plot(ps_csv_path, results_dir)
+    else:
+        all_states = State(
+            time=jnp.array(saved_times),
+            position=jnp.array(saved_pos),
+            momentum=jnp.array(saved_mom),
+        )
 
-    # 8. End-of-run plots
-    print("Saving analysis results...")
-    key_times = [config['a_start'], (config['a_start'] + config['a_end']) / 2, config['a_end']]
+        # 8. End-of-run plots
+        print("Saving analysis results...")
+        key_times = [config['a_start'], (config['a_start'] + config['a_end']) / 2, config['a_end']]
 
-    plot_density_evolution(all_states, B_m, key_times,
-                           save_path=os.path.join(results_dir, 'density_evolution.png'))
-    plot_particles(all_states, B_m, key_times,
-                   save_path=os.path.join(results_dir, 'particle_evolution.png'))
+        plot_density_evolution(all_states, B_mass, key_times,
+                               save_path=os.path.join(results_dir, 'density_evolution.png'))
+        plot_particles(all_states, B_mass, key_times,
+                       save_path=os.path.join(results_dir, 'particle_evolution.png'))
 
-    if config.get('save_power_spectrum'):
-        print("Generating power spectrum evolution plot...")
-        plot_power_spectrum_evolution(ps_csv_path, os.path.join(results_dir, "power_spectrum.png"))
+        if config.get('save_power_spectrum'):
+            _save_ps_plot(ps_csv_path, results_dir)
 
     print(f"Results saved in {results_dir}")
+
+
+def _save_ps_plot(ps_csv_path, results_dir):
+    """Write the power spectrum evolution plot from the accumulated CSV."""
+    print("Generating power spectrum evolution plot...")
+    plot_power_spectrum_evolution(ps_csv_path, os.path.join(results_dir, "power_spectrum.png"))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

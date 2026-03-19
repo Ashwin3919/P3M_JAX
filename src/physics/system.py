@@ -18,6 +18,15 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         self.pp_softening = pp_softening
         self.pp_cutoff = pp_cutoff
 
+        if solver == "p3m":
+            r_cut_phys = pp_cutoff * box.res
+            if r_cut_phys >= box.L / 2:
+                raise ValueError(
+                    f"PP cutoff r_cut={r_cut_phys:.3f} Mpc/h must be < L/2={box.L/2:.3f} Mpc/h "
+                    "for the minimum-image convention to be exact. "
+                    "Reduce pp_cutoff or increase the box size."
+                )
+
     def positionEquation(self, s: State[jnp.ndarray]) -> jnp.ndarray:
         a = s.time
         da = self.cosmology.da(a)

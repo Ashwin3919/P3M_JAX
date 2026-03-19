@@ -3,14 +3,9 @@ from src.solver.state import State
 from src.core.ops import gradient_2nd_order
 
 
-def a2r(B, X):
-    """Array (dim, N, ...) → particles (N^dim, dim)."""
+def _grid_to_particles(B, X):
+    """Flatten grid array (dim, N, ...) to particle array (N^dim, dim)."""
     return X.reshape(B.dim, -1).T
-
-
-def r2a(B, x):
-    """Particles (N^dim, dim) → array (dim, N, ...)."""
-    return x.T.reshape((B.dim,) + B.shape)
 
 
 class Zeldovich:
@@ -26,8 +21,8 @@ class Zeldovich:
 
     def state(self, a_init: float) -> State[jnp.ndarray]:
         """Generate initial state using Zeldovich approximation."""
-        X = a2r(self.bm, jnp.indices(self.bm.shape) * self.bm.res + a_init * self.u)
-        P = a2r(self.bm, a_init * self.u)
+        X = _grid_to_particles(self.bm, jnp.indices(self.bm.shape) * self.bm.res + a_init * self.u)
+        P = _grid_to_particles(self.bm, a_init * self.u)
         return State(time=a_init, position=X, momentum=P)
 
     @property

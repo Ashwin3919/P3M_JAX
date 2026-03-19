@@ -123,7 +123,7 @@ def plot_power_spectrum_evolution(csv_path: Path | str, output_path: Path | str)
     _apply_robust_style()
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    cmap = plt.get_cmap("plasma")
+    cmap = matplotlib.colormaps["plasma"]
     
     # Avoid LogNorm error if a_min is 0 or very small
     vmin = max(a_min, 1e-4)
@@ -144,7 +144,7 @@ def plot_power_spectrum_evolution(csv_path: Path | str, output_path: Path | str)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel(r"Wavenumber k [h/Mpc]", fontsize=12)
-    ax.set_ylabel(r"Power P(k) [(Mpc/h)^2]", fontsize=12)
+    ax.set_ylabel(r"Power P(k) [(Mpc/h)$^{d}$]", fontsize=12)
     ax.set_title("Density Power Spectrum Evolution", fontsize=14, pad=15)
     
     ax.grid(True, which="both", alpha=0.15)

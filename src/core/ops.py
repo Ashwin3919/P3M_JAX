@@ -77,11 +77,18 @@ def gradient_2nd_order(F, i):
 
 
 def garfield(B, P, T_filt, seed=None):
-    """Generate Gaussian random field."""
-    if seed is not None:
-        key = jax.random.PRNGKey(seed)
-    else:
-        key = jax.random.PRNGKey(0)
-    wn = jax.random.normal(key, shape=B.shape)
-    f = jnp.fft.ifftn(jnp.fft.fftn(wn) * jnp.sqrt(P(B.K))).real
-    return jnp.fft.ifftn(jnp.fft.fftn(f) * T_filt(B.K)).real
+    """Generate Gaussian random field with power spectrum P, transfer filter T_filt.
+
+    Applies both spectral filters in a single FFT round-trip:
+        phi = IFFT( FFT(white_noise) * sqrt(P(k)) * T_filt(k) )
+
+    Parameters
+    ----------
+    B       : Box
+    P       : Filter   — power spectrum amplitude sqrt(P(k))
+    T_filt  : Filter   — transfer function (e.g. Potential)
+    seed    : int | None — PRNG seed; defaults to 0 if None
+    """
+    key = jax.random.PRNGKey(seed if seed is not None else 0)
+    wn  = jax.random.normal(key, shape=B.shape)
+    return jnp.fft.ifftn(jnp.fft.fftn(wn) * jnp.sqrt(P(B.K)) * T_filt(B.K)).real

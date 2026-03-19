@@ -44,6 +44,11 @@ def iterate_step_scan(
         Emit one snapshot every this many leapfrog steps.
         n_steps must be divisible by save_every.
     """
+    if n_steps % save_every != 0:
+        raise ValueError(
+            f"n_steps ({n_steps}) must be divisible by save_every ({save_every})."
+        )
+
     step_fn = lambda s, x: leapfrog_step_scan(s, x, dt, system)
 
     if save_every == 1:
@@ -83,6 +88,8 @@ def compute_dt(state: State, cosmology, C_cfl: float, eps: float,
     a  = state.time
     da = cosmology.da(a)
     # Drift rate: dx/da = p / (a² H(a))
+    # 1e-20 guards against division by zero at a=0; at a=0.02 the denominator
+    # is ~H0*a^(1/2)*a^2 ≈ 70*0.14*0.0004 ≈ 0.004, so the guard never activates.
     v_mag = jnp.linalg.norm(state.momentum, axis=-1) / (a ** 2 * da + 1e-20)
     v_max = jnp.max(v_mag)
     dt = C_cfl * eps / (v_max + 1e-10)
