@@ -1,8 +1,8 @@
 # P3M-JAX: Cosmological N-Body Simulation
 
-A JAX-accelerated, dimension-agnostic Particle-Particle-Particle-Mesh (P3M) N-body code for cosmological simulations. Supports 2D and 3D domains, pure PM and full P3M force computation, fixed and adaptive time-stepping — all controlled by a single JSON config file.
+A JAX-accelerated, dimension-agnostic Particle-Particle-Particle-Mesh (P3M) N-body code for cosmological simulations. Supports 2D and 3D domains, pure PM and full P3M force computation, and fixed or CFL-adaptive time-stepping — all controlled by a single JSON config file.
 
-Runs without modification on CPU, NVIDIA GPU, and Apple Silicon (MPS).
+Runs without modification on CPU, NVIDIA GPU, and Apple Silicon.
 
 ---
 
@@ -16,14 +16,14 @@ P3M_JAX/
 │   ├── high_res.json           # 2D LCDM, N=256, float32, PM, fixed dt
 │   ├── 3d_default.json         # 3D EdS, N=64, float32, PM, fixed dt
 │   ├── 3d_heigh_res.json       # 3D LCDM, N=128, float32, PM, fixed dt
-│   └── p3m_adaptive.json       # 2D EdS, N=64, P3M + adaptive dt (demo)
+│   ├── 3d_heigh_res_p3m.json   # 3D LCDM, N=128, float32, P3M, fixed dt
+│   └── p3m_adaptive.json       # 2D EdS, N=64, P3M + adaptive dt
 ├── src/
 │   ├── core/                   # JAX kernels: CIC, interpolation, GRFs, filters
 │   ├── physics/                # Cosmology, PoissonVlasov system, Zeldovich ICs
-│   ├── solver/                 # State, leapfrog integrator, lax.scan / while_loop
-│   └── utils/                  # Power spectrum, VTK I/O, plotting
-├── tests/
-│   └── test_core.py            # 17 unit tests
+│   ├── solver/                 # State, KDK leapfrog, lax.scan / while_loop
+│   └── utils/                  # Power spectrum, VTK I/O
+├── tests/                      # 54 unit and physics tests
 └── results/                    # Auto-created; outputs organised by config name
 ```
 
@@ -34,6 +34,10 @@ P3M_JAX/
 Requires Python 3.9+.
 
 ```bash
+# Using Make (recommended)
+make setup
+
+# Or manually
 pip install -r requirements.txt
 ```
 
@@ -45,21 +49,16 @@ pip install -r requirements.txt
 python main.py --config configs/default.json
 ```
 
-All configs use `"solver": "pm"` by default. To use the P3M solver or adaptive stepping, either edit an existing config or use `p3m_adaptive.json`:
-
-```bash
-python main.py --config configs/p3m_adaptive.json
-```
-
 ### Available Configurations
 
-| Config | dim | N | Solver | Stepping | Precision | Notes |
-|--------|-----|---|--------|----------|-----------|-------|
-| `default.json` | 2 | 128 | PM | fixed dt=0.02 | float64 | Recommended starting point |
-| `high_res.json` | 2 | 256 | PM | fixed dt=0.015 | float32 | Power spectrum convergence |
-| `3d_default.json` | 3 | 64 | PM | fixed dt=0.02 | float32 | 3D validation |
-| `3d_heigh_res.json` | 3 | 128 | PM | fixed dt=0.02 | float32 | Production 3D run |
-| `p3m_adaptive.json` | 2 | 64 | P3M | adaptive | float64 | P3M + adaptive dt demo |
+| Config | dim | N | Solver | Stepping | Precision |
+|--------|-----|---|--------|----------|-----------|
+| `default.json` | 2 | 128 | PM | fixed dt=0.02 | float64 |
+| `high_res.json` | 2 | 256 | PM | fixed dt=0.015 | float32 |
+| `3d_default.json` | 3 | 64 | PM | fixed dt=0.02 | float32 |
+| `3d_heigh_res.json` | 3 | 128 | PM | fixed dt=0.02 | float32 |
+| `3d_heigh_res_p3m.json` | 3 | 128 | P3M | fixed dt=0.02 | float32 |
+| `p3m_adaptive.json` | 2 | 64 | P3M | adaptive (CFL) | float64 |
 
 ---
 
@@ -68,41 +67,49 @@ python main.py --config configs/p3m_adaptive.json
 ```json
 {
   "dim": 2,              // spatial dimension: 2 or 3
-  "N": 128,              // particles per side  (N^dim total particles)
+  "N": 128,              // particles per side (N^dim total)
   "L": 50.0,             // box side length [Mpc/h]
-  "A": 10.0,             // initial displacement field amplitude
+  "A": 10.0,             // initial displacement amplitude
   "seed": 4,             // random seed
   "a_start": 0.02,       // initial scale factor
   "a_end": 1.0,          // final scale factor
   "power_index": -0.5,   // primordial spectral index n_s
   "H0": 70.0,            // Hubble constant [km/s/Mpc]
-  "OmegaM": 1.0,         // matter density
+  "OmegaM": 1.0,         // matter density parameter
   "OmegaL": 0.0,         // cosmological constant
   "precision": "float64", // "float16" | "float32" | "float64"
 
   // --- Force solver ---
-  "solver": "pm",        // "pm" (default) | "p3m"
-  "pp_window": 4,        // P3M: sliding window half-width W (neighbours = 2W+1)
+  "solver": "pm",        // "pm" | "p3m"
+  "pp_window": 4,        // P3M: sliding window half-width
   "pp_softening": 0.2,   // P3M: gravitational softening length [Mpc/h]
   "pp_cutoff": 2.5,      // P3M: PP cutoff in units of force grid cell size
 
-  // --- Time-stepping (fixed) ---
-  "dt": 0.02,            // fixed Δa step  (used when timestepping="fixed")
+  // --- Fixed time-stepping ---
+  "dt": 0.02,            // fixed Δa step
   "save_every": 1,       // leapfrog steps between saved snapshots
 
-  // --- Time-stepping (adaptive) ---
+  // --- Adaptive time-stepping ---
   "timestepping": "fixed", // "fixed" | "adaptive"
   "C_cfl": 0.3,           // CFL safety factor
   "dt_min": 0.001,        // minimum Δa
   "dt_max": 0.05,         // maximum Δa
-  "n_chunks": 50,         // number of output checkpoints (adaptive only)
+  "n_chunks": 50,         // number of output checkpoints
 
   // --- Output ---
   "save_vtk": true,
-  "vtk_freq": 1,         // write VTK every N chunks  (1 = every chunk)
+  "vtk_freq": 1,
   "save_power_spectrum": true
 }
 ```
+
+### Precision
+
+| Value | x64 enabled | Use case |
+|-------|-------------|----------|
+| `"float64"` | yes | Default; required for accurate gravitational potentials |
+| `"float32"` | no | Faster on GPU/MPS; ~2× memory reduction |
+| `"float16"` | no | Experimental; numerically unstable |
 
 ---
 
@@ -112,8 +119,8 @@ All output is written to `results/<config_name>/`:
 
 ```
 results/default/
-├── density_evolution.png       # 3-panel density map at early/mid/late times
-├── particle_evolution.png      # 3-panel particle scatter plot
+├── density_evolution.png       # density map at early/mid/late times
+├── particle_evolution.png      # particle scatter plot
 ├── power_spectrum.csv          # P(k) at every saved timestep
 ├── power_spectrum.png          # P(k) evolution coloured by scale factor
 └── vtk/
@@ -121,28 +128,28 @@ results/default/
     └── density/                # ASCII VTK StructuredPoints (density field)
 ```
 
-VTK files are compatible with ParaView 5.x+. Load all particle snapshots as a time series via **File → Open** on the `vtk/particles/` directory.
+VTK files are compatible with ParaView 5.x+.
 
 ---
 
 ## Running Tests
 
 ```bash
-pytest tests/
+pytest tests/ -v
 ```
 
-17 unit tests cover CIC mass conservation, interpolation, Box wave numbers, gradient accuracy, 3D infrastructure, PM/P3M force correctness, erfc force splitting, and adaptive time-step bounds.
+54 tests cover CIC mass conservation, interpolation accuracy, Box wave numbers, gradient correctness, PM/P3M force computation, erfc force splitting, Morton Z-curve ordering, and adaptive time-step bounds.
 
 ---
 
-## Generalisation Roadmap
+## Method Summary
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Dimension-agnostic Box, filters, FFT | Done |
-| 2 | ND CIC deposition and interpolation | Done |
-| 3 | Zeldovich ICs for 3D | Done |
-| 4 | PoissonVlasov 3D PM solver | Done |
-| 5 | TSC mass assignment + deconvolved Green's function | Not done |
-| 6 | Short-range PP forces via Morton Z-curve + erfc splitting | Done |
-| 7 | Adaptive time-stepping via lax.while_loop + CFL condition | Done |
+**Force computation (PM mode):** Cloud-in-Cell (CIC) mass deposition onto a dual-resolution grid (force grid at 2× the mass grid resolution), FFT Poisson solve with a precomputed potential kernel, second-order finite-difference gradient, and bilinear/trilinear interpolation back to particle positions.
+
+**Force computation (P3M mode):** PM long-range force augmented by a direct particle-particle short-range correction. Particles are sorted along a Morton Z-curve; a sliding window of width `2*pp_window+1` cells accumulates PP forces using an erfc force-splitting kernel that removes the PM contribution below `pp_cutoff` cell widths.
+
+**Initial conditions:** Zeldovich approximation from a Gaussian random potential field with power spectrum P(k) ∝ k^n_s, tapered by a Gaussian scale filter and Nyquist cutoff.
+
+**Time integration:** KDK leapfrog in scale factor `a`. Fixed stepping uses `jax.lax.scan`; adaptive stepping uses `jax.lax.while_loop` with a CFL condition estimated from the maximum particle velocity.
+
+**Power spectrum:** Annular k-bin averaging with CIC window deconvolution (P_corr = P / W²) and Poisson shot noise subtraction.
