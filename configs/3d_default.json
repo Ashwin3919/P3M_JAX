@@ -16,5 +16,6 @@
     "save_power_spectrum": true,
     "precision": "float32",
     "mass_assignment": "cic",
-    "timestepping": "fixed"
+    "timestepping": "fixed",
+    "solver": "pm"
 }

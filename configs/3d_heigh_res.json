@@ -16,5 +16,6 @@
     "save_vtk": true,
     "vtk_freq": 1,
     "save_power_spectrum": true,
-    "precision": "float32"
+    "precision": "float32",
+    "solver": "pm"
 }
