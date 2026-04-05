@@ -448,6 +448,8 @@ src/
     box.py           — Box: periodic domain, FFT wavenumber grids K and k
     ops.py           — md_cic_nd, InterpND, gradient_2nd_order, garfield
     filters.py       — Composable Fourier filters: Power_law, Scale, Cutoff, Potential
+  diff/
+    pm_grad.py       — pm_rollout, make_loss_fn, pm_rollout_cosmo (differentiable PM)
   physics/
     cosmology.py     — Cosmology dataclass: H(a), G_eff, growing_mode(a); presets
     system.py        — PoissonVlasov: PM and P3M force computation
@@ -676,6 +678,7 @@ Organised into seven test classes. Each test checks a specific physical property
 5. **PM vs P3M force accuracy** — comparing PM and P3M runs at the same resolution quantifies the sub-cell force improvement near halo centres (`3d_heigh_res.json` vs `3d_heigh_res_p3m.json`).
 6. **Adaptive vs fixed stepping** — the adaptive integrator uses larger steps at early times and automatically refines near shell-crossing; comparing $P(k)$ between runs tests CFL stability (`p3m_adaptive.json` vs `default.json`).
 7. **Resolution convergence** — 2D: $N \in \{64, 128, 256\}$; 3D: $N \in \{32, 64, 128\}$. Tests force and particle resolution convergence of $P(k)$.
+8. **Gradient-based initial condition reconstruction** — using `src/diff/pm_grad.py`, gradients of any scalar observable (final power spectrum, density field, particle positions) with respect to the initial conditions can be computed via `jax.grad`. This enables gradient descent on the initial conditions, simulation-based inference, and adjoint sensitivity analysis of cosmological parameters.
 
 ---
 
@@ -688,6 +691,82 @@ Organised into seven test classes. Each test checks a specific physical property
 **PP force-split accuracy:** The current PP correction uses the erfc splitting kernel but does not subtract an analytic model of the PM force at short separations. In the original Hockney-Eastwood P3M, this analytic subtraction prevents double-counting at intermediate $r$. The present implementation is equivalent to assuming the PM force is negligible below $r_\text{cut}$, which holds when $r_\text{cut} \ll \Delta x_f$ — the typical operating regime.
 
 **Large-$N$ PP scaling:** The Morton-sorted sliding window is $O(N_p \cdot W)$. For $W \gtrsim 10$ or very large $N_p$, spatial hashing (which has $O(N_p)$ lookup in the average case) would outperform the fixed window approach.
+
+---
+
+## 18. Differentiable Simulation (PM Path)
+
+### 18.1 Overview
+
+The PM force pipeline is fully differentiable end-to-end with respect to initial particle positions and momenta. This means `jax.grad` and `jax.value_and_grad` can propagate gradients through an arbitrary number of KDK leapfrog steps, enabling gradient-based inference of initial conditions, cosmological parameters, and force model parameters.
+
+The key insight is that every operation in the PM pipeline has a well-defined vector-Jacobian product (VJP) in JAX, so the full chain
+
+$$\mathbf{x}_0, \mathbf{p}_0 \;\xrightarrow{\text{CIC}}\; \delta \;\xrightarrow{\text{FFT Poisson}}\; \phi \;\xrightarrow{\text{FD grad}}\; \mathbf{g} \;\xrightarrow{\text{interp}}\; \mathbf{a} \;\xrightarrow{\text{KDK scan}}\; \mathbf{x}_T, \mathbf{p}_T$$
+
+is differentiable without any modification to the existing simulation code.
+
+### 18.2 Why Each PM Stage Is Differentiable
+
+**CIC mass deposition (`md_cic_nd`).** The scatter-add `flat_tgt.at[flat_idx].add(weights)` compiles to XLA's `ScatterAdd`, whose VJP is a `GatherND` (the transpose operation). Gradient flow proceeds through the weights
+
+$$W(\boldsymbol{\delta}) = \prod_{i} \begin{cases} 1 - f_i & \delta_i = 0 \\ f_i & \delta_i = 1 \end{cases}, \quad \mathbf{f} = \mathbf{x}/\Delta x - \lfloor \mathbf{x}/\Delta x \rfloor,$$
+
+since $\partial W / \partial \mathbf{x} = \partial W / \partial \mathbf{f}$ (the floor operation contributes zero gradient, which is correct — the weight is a continuous piecewise-linear function of position). The cell indices `flat_idx` are integers and receive no gradient, which is expected and correct.
+
+**FFT Poisson solve.** `jnp.fft.fftn` and `jnp.fft.ifftn` have registered VJPs in JAX (the VJP of a DFT is the conjugate DFT). Multiplication by the precomputed kernel $-1/|\mathbf{k}|^2$ is a pointwise linear operation with trivial gradient.
+
+**Finite-difference gradient (`gradient_2nd_order`).** `jnp.roll` is a linear cyclic-shift operation; its VJP is a roll in the opposite direction. The fourth-order stencil is a linear combination of rolls, so the gradient flows through without any special handling.
+
+**Force interpolation (`InterpND`).** The bilinear/trilinear gather uses the same $2^d$ corner weights as CIC deposition (it is the transpose operator by design). All indexing is gather-style; gradients flow through the fractional weights.
+
+**Hubble parameter (`cosmology.da`).** Implemented as pure `jnp` arithmetic; differentiable analytically.
+
+**KDK leapfrog over `jax.lax.scan`.** `lax.scan` supports full reverse-mode AD. Each leapfrog step is differentiated as part of the scan body; gradients are accumulated backward through all steps automatically.
+
+### 18.3 Why P3M Is Not Differentiable
+
+The P3M short-range correction introduces two operations that break the AD graph:
+
+**Morton sorting via `jnp.argsort`.** The spatial sort `order = jnp.argsort(codes)` produces integer indices. Integer arrays have no gradient in JAX, so any quantity that depends on which particles are *in* a given window — including the sorted positions `sorted_pos = pos[order]` and the inverse permutation `inv_order` — is treated as a constant with respect to `pos`. As a result, the PP force $\mathbf{f}_\text{PP}$ has zero gradient through the sorting step, and the gradient computed by AD would be incorrect (not merely zero — the window membership does change with position near a cell boundary, producing a non-zero true gradient that AD cannot capture).
+
+**Discontinuous window membership.** The `valid` mask `r_bare < r_cut` is a hard threshold that is zero almost everywhere and undefined at exactly $r = r_\text{cut}$. JAX will propagate zero gradient through this mask (treating it as a constant once compiled), silently discarding the contribution of particles crossing the cutoff boundary.
+
+Together, these make the P3M path structurally non-differentiable: `jax.grad` will not raise an error, but the resulting gradients are incorrect because they omit both the sorting permutation and the force cutoff boundary contributions. `pm_rollout` therefore raises a `ValueError` at construction time if `system.solver != "pm"`, preventing silent incorrect gradient computation.
+
+**Possible future fix.** Differentiable sorting (e.g., the NeuralSort or soft-rank operators) and a smooth cutoff (replacing the hard `r_bare < r_cut` mask with a sigmoid) could make P3M differentiable, at the cost of introducing a temperature hyperparameter and changing the force law. This is an active research direction in differentiable simulation.
+
+### 18.4 API
+
+The differentiable interface lives in `src/diff/pm_grad.py`:
+
+```python
+from src.diff import pm_rollout, make_loss_fn
+import jax
+
+# Option 1: direct rollout — compose your own loss
+final_state = pm_rollout(init_pos, init_mom, a_init=0.1, n_steps=50,
+                         dt=0.01, system=system)
+
+# Option 2: factory — supplies a (pos, mom) → scalar function
+loss_fn = make_loss_fn(system, a_init=0.1, n_steps=50, dt=0.01,
+                       observable=lambda s: jnp.mean(s.position**2))
+
+grad_fn = jax.jit(jax.value_and_grad(loss_fn, argnums=(0, 1)))
+loss, (dpos, dmom) = grad_fn(init_pos, init_mom)
+```
+
+**Memory note.** Reverse-mode AD through $T$ leapfrog steps stores $O(T)$ intermediate states. For long rollouts, pass `checkpoint=True` to `pm_rollout`: this applies `jax.checkpoint` per scan step, recomputing each forward step during the backward pass and reducing memory to $O(1)$ in $T$ at the cost of approximately $2\times$ the forward compute.
+
+### 18.5 Validation
+
+The test file `tests/test_diff.py` verifies differentiability at three levels:
+
+1. **Structural** — `jax.grad` traces the pipeline without error for 2D, 3D, EdS, and LCDM configurations.
+2. **Signal** — gradients are finite and non-zero; distinct initial conditions produce distinct gradients.
+3. **Numerical accuracy** — AD gradients match central finite-difference estimates to within 1% relative error for selected components of `pos` and `mom`.
+
+An additional test confirms that `jax.checkpoint` does not change gradient values (only memory usage), and that `pm_rollout` raises `ValueError` when called with `solver="p3m"`.
 
 ---
 

@@ -28,6 +28,7 @@ P3M_JAX/
 │   └── p3m_adaptive.json       # 2D EdS, N=64, P3M + adaptive dt
 ├── src/
 │   ├── core/                   # JAX kernels: CIC, interpolation, GRFs, filters
+│   ├── diff/                   # Differentiable PM rollout (jax.grad interface)
 │   ├── physics/                # Cosmology, PoissonVlasov system, Zeldovich ICs
 │   ├── solver/                 # State, KDK leapfrog, lax.scan / while_loop
 │   └── utils/                  # Power spectrum, VTK I/O
@@ -146,7 +147,28 @@ VTK files are compatible with ParaView 5.x+.
 pytest tests/ -v
 ```
 
-54 tests cover CIC mass conservation, interpolation accuracy, Box wave numbers, gradient correctness, PM/P3M force computation, erfc force splitting, Morton Z-curve ordering, and adaptive time-step bounds.
+Tests cover CIC mass conservation, interpolation accuracy, Box wave numbers, gradient correctness, PM/P3M force computation, erfc force splitting, Morton Z-curve ordering, adaptive time-step bounds, and end-to-end PM differentiability (AD vs finite-difference checks).
+
+---
+
+## Differentiable PM Simulation
+
+The PM force pipeline is fully differentiable end-to-end via JAX automatic differentiation. Gradients can be computed with respect to initial particle positions and momenta (and optionally cosmological parameters) using `jax.grad` / `jax.value_and_grad`.
+
+```python
+from src.diff import make_loss_fn
+import jax
+
+loss_fn = make_loss_fn(system, a_init=0.1, n_steps=50, dt=0.01)
+grad_fn = jax.jit(jax.value_and_grad(loss_fn, argnums=(0, 1)))
+loss, (dpos, dmom) = grad_fn(init_pos, init_mom)
+```
+
+Pass `checkpoint=True` to `make_loss_fn` for memory-efficient backprop over long rollouts (recomputes forward steps during backward pass instead of storing them).
+
+**Note:** Only `solver="pm"` is differentiable. The P3M short-range path uses `jnp.argsort` (Morton sorting) which has no defined gradient; `pm_rollout` raises a `ValueError` if called with `solver="p3m"`.
+
+See `src/diff/pm_grad.py` for the full API.
 
 ---
 
