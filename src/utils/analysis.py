@@ -11,7 +11,7 @@ import matplotlib.ticker as mticker
 from matplotlib.cm import ScalarMappable
 
 # ---------------------------------------------------------------------------
-# Core power spectrum computation (Adapted for 2D)
+# Core power spectrum computation
 # ---------------------------------------------------------------------------
 
 def compute_power_spectrum(
@@ -59,7 +59,10 @@ def compute_power_spectrum(
         W *= np.sinc(g * dx / (2 * np.pi)) ** sinc_exp
     W = W.ravel()
 
-    Pk2d /= np.where(W > 1e-6, W, 1.0)  # 1e-6 (vs 1e-4 in force kernel): post-hoc deconvolution recovers more Nyquist modes safely since P(k) errors here are diagnostic, not fed back into dynamics
+    # Window deconvolution threshold: 1e-6 (looser than the 1e-4 in the force
+    # kernel) because post-hoc P(k) errors are diagnostic and not fed back
+    # into the dynamics, so recovering more Nyquist modes safely is worthwhile.
+    Pk2d /= np.where(W > 1e-6, W, 1.0)
 
     # ---- Shot noise correction ----
     if particle_count is not None:
@@ -114,7 +117,6 @@ def plot_power_spectrum_evolution(csv_path: Path | str, output_path: Path | str)
     if not csv_path.exists():
         return
 
-    # Using Pandas for much more reliable data handling
     try:
         df = pd.read_csv(csv_path)
     except Exception as e:
@@ -129,7 +131,6 @@ def plot_power_spectrum_evolution(csv_path: Path | str, output_path: Path | str)
     
     a_min, a_max = np.min(a_values), np.max(a_values)
 
-    # Simplified style for better compatibility across systems
     _apply_robust_style()
 
     fig, ax = plt.subplots(figsize=(6, 5))

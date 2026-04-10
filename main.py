@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""Entry point for P3M-JAX N-body simulations.
+
+Usage
+-----
+    python main.py --config configs/default.json
+
+All simulation parameters are read from the JSON config file; see
+`src/utils/config_parser.py` and `README.md` for the full parameter reference.
+"""
 import argparse
 import os
 import time
@@ -205,7 +214,11 @@ def run_simulation(config_path):
 
 
 def _save_ps_plot(ps_csv_path, results_dir):
-    """Write the power spectrum evolution plot from the accumulated CSV."""
+    """Generate and save the power-spectrum evolution plot from the accumulated CSV.
+
+    Separated from `run_simulation` so the OOM guard path can call it without
+    duplicating the output-path construction logic.
+    """
     print("Generating power spectrum evolution plot...")
     plot_power_spectrum_evolution(ps_csv_path, os.path.join(results_dir, "power_spectrum.png"))
 

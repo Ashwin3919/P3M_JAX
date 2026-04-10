@@ -179,7 +179,9 @@ def gradient_4th_order(F, i):
             2. / 3 * jnp.roll(F, -1, axis=i) - 1. / 12 * jnp.roll(F, -2, axis=i))
 
 
-# Backward-compatible alias — prefer gradient_4th_order in new code.
+# Backward-compatible alias from when this used a 2nd-order 3-point stencil.
+# The function was upgraded to a 4th-order 5-point stencil; the alias is kept
+# so that existing callers are not broken.  Prefer gradient_4th_order in new code.
 gradient_2nd_order = gradient_4th_order
 
 

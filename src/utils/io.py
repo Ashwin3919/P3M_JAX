@@ -69,11 +69,11 @@ def write_vtk_density(rho, box, a_value, results_dir, config_name):
     if rho.ndim == 2:
         nx, ny = rho.shape
         nz = 1
-        # Non-zero z-spacing prevents degenerate cells that render as grid boxes
-        spacing = f"{res} {res} {res}"
     else:
         nx, ny, nz = rho.shape
-        spacing = f"{res} {res} {res}"
+    # Isotropic spacing for both 2D (nz=1 slab) and 3D grids.
+    # Non-zero z-spacing in the 2D case prevents degenerate cells in ParaView.
+    spacing = f"{res} {res} {res}"
 
     with open(filepath, 'w') as f:
         f.write("# vtk DataFile Version 3.0\n")

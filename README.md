@@ -192,14 +192,6 @@ See `src/diff/pm_grad.py` for the full API.
 Reference config: `configs/high_res.json`.
 Model used: standard flat LambdaCDM cosmology with `H0 = 68.0`, `OmegaM = 0.31`, `OmegaL = 0.69`.
 
-<video src="op/2_cropped_fast.mp4" controls muted loop playsinline width="100%"></video>
-
-[Download video (MP4): 2_cropped_fast](op/2_cropped_fast.mp4)
-
-<video src="op/3_cropped_fast.mp4" controls muted loop playsinline width="100%"></video>
-
-[Download video (MP4): 3_cropped_fast](op/3_cropped_fast.mp4)
-
 ---
 
 ## Contributing
