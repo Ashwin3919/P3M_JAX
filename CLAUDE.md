@@ -60,8 +60,8 @@ Config JSON → Cosmology + Box setup → Zeldovich ICs → PoissonVlasov system
 | Module | Role |
 |--------|------|
 | `src/core/box.py` | `Box` class: periodic domain, FFT wavenumber grids (`K`, `k`), Nyquist/min freq, grid resolution |
-| `src/core/ops.py` | ND CIC mass deposition `md_cic_nd()` (alias: `md_cic_2d`), ND interpolation `InterpND` (alias: `Interp2D`), 2nd-order finite-difference gradient `gradient_2nd_order()`, Gaussian random field `garfield()` |
-| `src/core/filters.py` | Composable Fourier-space filters: `Power_law`, `Scale`, `Cutoff`, `Potential` (-1/k²), `Identity`, `Zero`. Operator overloading: `*` (product), `+` (sum), `**` (power), `~` (conjugate), `/` (ratio). Inner product `cc()` and cross-product `cf()` methods. |
+| `src/core/ops.py` | ND CIC deposition `md_cic_nd()` (alias: `md_cic_2d`), ND TSC deposition `md_tsc_nd()`, ND interpolation `InterpND`/`InterpTSC` (CIC alias: `Interp2D`), 4th-order finite-difference gradient `gradient_4th_order()` (alias: `gradient_2nd_order`), Gaussian random field `garfield()` |
+| `src/core/filters.py` | Composable Fourier-space filters: `Power_law`, `Scale`, `Cutoff`, `Potential` (-1/k²), `CICWindow`, `TSCWindow`, `Identity`, `Zero`. Operator overloading: `*` (product), `+` (sum), `**` (power), `~` (conjugate), `/` (ratio). Inner product `cc()` and cross-product `cf()` methods. |
 | `src/physics/cosmology.py` | `Cosmology` dataclass: `da(a)` = aḢ(a), `G` = (3/2)ΩM H0², `growing_mode(a)` (diagnostic only, not called by solver). Presets: `LCDM_PRESET` (Planck 2018: H0=68, ΩM=0.31, ΩL=0.69), `EDS_PRESET` (H0=70, ΩM=1, ΩL=0) |
 | `src/physics/system.py` | `PoissonVlasov`: PM force (`_pm_force`), PP correction (`_pp_force`), Morton encoding (`_morton_encode`). `solver='pm'` uses PM only; `solver='p3m'` adds PP short-range correction. |
 | `src/physics/initial_conds.py` | `Zeldovich`: Gaussian random potential → displacement field `u` → initial positions/momenta. `particle_mass` property returns `(N_force/N_mass)^dim`. |
@@ -78,10 +78,10 @@ Config JSON → Cosmology + Box setup → Zeldovich ICs → PoissonVlasov system
 1. CIC deposition: particle positions → density grid ρ(x) via `md_cic_nd`
 2. Density contrast: δ = ρ × particle_mass - 1
 3. FFT: δ̂ = FFT(δ)
-4. Gravitational potential: φ̂ = δ̂ × kernel (precomputed `-1/k²` filter, set at `__init__`)
+4. Gravitational potential: φ̂ = δ̂ × kernel (precomputed `-1/(k² W²)` filter, set at `__init__`; W is `CICWindow` or `TSCWindow` depending on `assignment`)
 5. IFFT + scale: φ = IFFT(φ̂).real × G / a
-6. Gradient: ∇φ via `gradient_2nd_order` (4-point stencil, periodic) along each axis
-7. Interpolation: ∇φ(xᵢ) via `InterpND` at particle positions → PM acceleration
+6. Gradient: ∇φ via `gradient_4th_order` (4-point stencil, O(Δx⁴), periodic) along each axis
+7. Interpolation: ∇φ(xᵢ) via `InterpND` (CIC) or `InterpTSC` at particle positions → PM acceleration
 
 **PP step (only when `solver='p3m'`):**
 1. Convert positions to grid units; Morton-encode to Z-curve integer codes

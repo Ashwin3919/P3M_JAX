@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 from src.solver.state import State
-from src.core.ops import gradient_2nd_order
+from src.core.ops import gradient_4th_order
 from src.physics.cosmology import Cosmology as _Cosmology
 
 
@@ -17,7 +17,7 @@ class Zeldovich:
 
         # Displacement field: (dim, N, ...) in grid units
         self.u = jnp.array(
-            [-gradient_2nd_order(phi, i) for i in range(B_mass.dim)]
+            [-gradient_4th_order(phi, i) for i in range(B_mass.dim)]
         ) / self.bm.res
 
     def state(self, a_init: float) -> State[jnp.ndarray]:

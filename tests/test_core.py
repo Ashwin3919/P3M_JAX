@@ -4,7 +4,7 @@ Float64 is enabled for the entire session via conftest.py.
 """
 import jax.numpy as jnp
 import pytest
-from src.core.ops import md_cic_2d, Interp2D, md_cic_nd, InterpND, md_tsc_nd, InterpTSC, gradient_2nd_order
+from src.core.ops import md_cic_2d, Interp2D, md_cic_nd, InterpND, md_tsc_nd, InterpTSC, gradient_4th_order
 from src.core.box import Box
 
 
@@ -39,18 +39,18 @@ def test_box_wave_numbers():
     assert jnp.isclose(box.k_max, N * jnp.pi / L)
 
 
-def test_gradient_2nd_order():
+def test_gradient_4th_order():
     """4th-order FD gradient of sin(x) ≈ cos(x).
 
-    gradient_2nd_order returns stencil * dx (not dF/dx), so divide by dx
-    before comparing — this is the documented convention.
+    gradient_4th_order returns the stencil numerator (not divided by Δx),
+    so divide by dx before comparing — this is the documented convention.
     """
     N = 64
     x = jnp.linspace(0, 2 * jnp.pi, N, endpoint=False)
     dx = 2 * jnp.pi / N
     X, Y = jnp.meshgrid(x, x)
     F = jnp.sin(X)
-    grad_x = gradient_2nd_order(F, 1) / dx
+    grad_x = gradient_4th_order(F, 1) / dx
     assert jnp.allclose(grad_x, jnp.cos(X), atol=1e-2)
 
 

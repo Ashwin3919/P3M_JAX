@@ -2,8 +2,8 @@ import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
 from src.solver.state import State, HamiltonianSystem
-from src.core.ops import md_cic_nd, md_tsc_nd, InterpND, InterpTSC, gradient_2nd_order
-from src.core.filters import Potential, TSCWindow
+from src.core.ops import md_cic_nd, md_tsc_nd, InterpND, InterpTSC, gradient_4th_order
+from src.core.filters import Potential, CICWindow, TSCWindow
 
 
 class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
@@ -19,13 +19,21 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         self.pp_softening = pp_softening
         self.pp_cutoff = pp_cutoff
 
-        # Build the Poisson kernel: plain -1/k² for CIC, deconvolved for TSC.
-        # The TSC kernel divides out W_TSC(k)² = [∏_d sinc³(k_d Δx/2π)]² to correct
-        # for the bias introduced by both the deposition and interpolation steps.
+        # Build the deconvolved Poisson kernel -1/k² / W(k)² for both schemes.
+        #
+        # The mass-assignment window W(k) biases the density in Fourier space:
+        #   ρ̂_mesh = W(k) · ρ̂_true   (deposition)
+        #   F_particle = W(k) · F̂_mesh (interpolation)
+        # Net bias: W(k)².  Dividing the kernel by W(k)² corrects both steps.
+        #
+        #   CIC: W(k) = ∏_d sinc²(k_d Δx / 2π)  [quadratic, sinc² per axis]
+        #   TSC: W(k) = ∏_d sinc³(k_d Δx / 2π)  [cubic,     sinc³ per axis]
+        #
+        # Both windows are guarded against near-zero values at the Nyquist corner.
         if assignment == "tsc":
             self.kernel = (Potential() / TSCWindow(box) ** 2)(self.box.K)
         else:   # cic (default)
-            self.kernel = Potential()(self.box.K)
+            self.kernel = (Potential() / CICWindow(box) ** 2)(self.box.K)
 
         if solver == "p3m":
             r_cut_phys = pp_cutoff * box.res
@@ -50,7 +58,7 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         """
         interp_cls = InterpTSC if self.assignment == "tsc" else InterpND
         acc_components = [
-            interp_cls(gradient_2nd_order(phi, i))(x_grid)
+            interp_cls(gradient_4th_order(phi, i))(x_grid)
             for i in range(self.box.dim)
         ]
         return jnp.stack(acc_components, axis=-1) / self.box.res

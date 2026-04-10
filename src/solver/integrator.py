@@ -1,11 +1,8 @@
-from typing import Callable, Tuple
+from typing import Tuple
 from functools import partial
 import jax
 import jax.numpy as jnp
 from src.solver.state import State, Vector, HamiltonianSystem
-
-Stepper = Callable[[State], State]
-HaltingCondition = Callable[[State], bool]
 
 def leap_frog(dt: float, h: HamiltonianSystem[jnp.ndarray], s: State) -> State:
     """KDK Leap-frog integration step (immutable State)."""
@@ -143,13 +140,3 @@ def step_chunk_adaptive(
     return final_state
 
 
-def iterate_step(step: Stepper, halt: HaltingCondition, init: State) -> list[State]:
-    """Fallback Python while-loop (Legacy)."""
-    state = init
-    states = []
-    while not halt(state):
-        states.append(state)
-        state = step(state)
-        if len(states) % 10 == 0:
-            print(f"Time step {len(states)}, a = {state.time:.3f}")
-    return states

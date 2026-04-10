@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import pytest
 
 from src.core.box import Box
-from src.core.ops import md_cic_nd, garfield, gradient_2nd_order
+from src.core.ops import md_cic_nd, garfield, gradient_4th_order
 from src.core.filters import Power_law, Scale, Cutoff, Potential
 from src.physics.cosmology import Cosmology, EDS_PRESET, LCDM_PRESET
 from src.physics.system import PoissonVlasov
@@ -200,7 +200,7 @@ class TestForcePipeline:
             f"Max error: {float(jnp.max(jnp.abs(phi - phi_anal))):.2e}"
 
     def test_gradient_of_potential_is_force(self):
-        """gradient_2nd_order applied to a known phi recovers the exact force."""
+        """gradient_4th_order applied to a known phi recovers the exact force."""
         N = 64
         L = 2 * jnp.pi
         box = Box(2, N, float(L))
@@ -209,7 +209,7 @@ class TestForcePipeline:
 
         # phi = sin(x) → dphi/dx = cos(x)
         phi = jnp.sin(X)
-        grad_x = gradient_2nd_order(phi, 1) / box.res   # axis 1 = x dimension
+        grad_x = gradient_4th_order(phi, 1) / box.res   # axis 1 = x dimension
 
         assert jnp.allclose(grad_x, jnp.cos(X), atol=1e-2)
 

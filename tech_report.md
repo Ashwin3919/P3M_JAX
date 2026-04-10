@@ -128,25 +128,27 @@ $$W_\text{CIC}(\boldsymbol{\delta}) = \prod_{i=0}^{d-1} \begin{cases} 1 - f_i & 
 
 $$w_i(\delta) = \begin{cases} \frac{1}{2}(0.5 - dx_i)^2 & \delta = -1 \\ \frac{3}{4} - dx_i^2 & \delta = 0 \\ \frac{1}{2}(0.5 + dx_i)^2 & \delta = +1 \end{cases}. \tag{10b}$$
 
-`md_tsc_nd(shape, pos)` unrolls the $3^d$ corner loop at trace time. The Fourier-space TSC window $W_\text{TSC}(\mathbf{k}) = \prod_i \text{sinc}^3(k_i \Delta x / 2\pi)$ is applied as a deconvolution factor in both the Poisson kernel (`TSCWindow` filter) and the power spectrum output. Cell indices are wrapped modulo `shape` for periodic boundary conditions. `shape` is declared a static `jit` argument so the graph is reused across calls with the same grid resolution.
+`md_tsc_nd(shape, pos)` unrolls the $3^d$ corner loop at trace time. Cell indices are wrapped modulo `shape` for periodic boundary conditions. `shape` is declared a static `jit` argument so the graph is reused across calls with the same grid resolution.
 
 ### 4.3 Fourier-Space Poisson Solver
 
-Given the density contrast $\delta = \rho / \bar{\rho} - 1$ (where $\bar{\rho}$ is maintained exactly at 1 by the CIC normalization), the gravitational potential is
+The mass-assignment window $W(\mathbf{k})$ biases the density contrast in Fourier space on both deposit ($\hat{\rho}_\text{mesh} = W \cdot \hat{\rho}_\text{true}$) and interpolate ($\hat{F}_\text{particle} = W \cdot \hat{F}_\text{mesh}$), resulting in a net force bias of $W^2(\mathbf{k})$. The deconvolved Poisson kernel removes this bias exactly:
 
-$$\hat{\phi}(\mathbf{k}) = -\frac{G_\text{eff}}{a} \cdot \frac{\hat{\delta}(\mathbf{k})}{|\mathbf{k}|^2}. \tag{11}$$
+$$\hat{\phi}(\mathbf{k}) = -\frac{G_\text{eff}}{a} \cdot \frac{\hat{\delta}(\mathbf{k})}{|\mathbf{k}|^2 \, W^2(\mathbf{k})}, \tag{11}$$
 
-The kernel $-1/|\mathbf{k}|^2$ (with the zero mode set to zero, enforcing $\langle\phi\rangle = 0$) is precomputed once as `Potential()(B_f.K)` and stored in `self.kernel`. At each force evaluation, the pipeline executes: FFT($\delta$) → multiply by kernel → IFFT → multiply by $G_\text{eff}/a$.
+where $W(\mathbf{k}) = \prod_i \text{sinc}^{n}(k_i \Delta x / 2\pi)$ with $n = 2$ for CIC and $n = 3$ for TSC. Near-zero modes at the Nyquist corner are clamped ($W \leftarrow 1$ when $W < 10^{-4}$) to keep the kernel bounded.
+
+The kernel is precomputed once at `__init__` as `(Potential() / CICWindow(box)**2)(B_f.K)` or `(Potential() / TSCWindow(box)**2)(B_f.K)` and stored in `self.kernel`. Both CIC and TSC force pipelines are therefore free of systematic window-function bias, and both are consistent with their respective power-spectrum deconvolution in Section 9.
 
 ### 4.4 Gradient and Force Interpolation
 
-The gravitational acceleration $\mathbf{g} = -\nabla\phi$ is computed from the potential using a fourth-order central finite-difference stencil with periodic boundary conditions:
+The gravitational acceleration $\mathbf{g} = -\nabla\phi$ is computed using a fourth-order central finite-difference stencil with periodic boundary conditions (`gradient_4th_order`):
 
 $$\left(\partial_i \phi\right)_\mathbf{n} = \frac{1}{12\Delta x}\left[\phi_{\mathbf{n}+2\hat{e}_i} - 8\phi_{\mathbf{n}+\hat{e}_i} + 8\phi_{\mathbf{n}-\hat{e}_i} - \phi_{\mathbf{n}-2\hat{e}_i}\right]. \tag{12}$$
 
-Note: `gradient_2nd_order` returns the stencil numerator (not divided by $\Delta x$); the calling code in `_pm_force` divides by `box.res` to recover the correct physical gradient.
+The function returns the stencil numerator (not divided by $\Delta x$); `_pm_force` divides by `box.res` to recover the physical gradient.
 
-The gradient field is interpolated to particle positions using `InterpND`, which applies the same $2^d$ corner weights as `md_cic_nd` — this makes the force interpolation the exact transpose of the mass deposition operator, a property that helps conserve momentum.
+The gradient field is interpolated to particle positions using `InterpND` (CIC) or `InterpTSC` (TSC) — matching the deposition scheme so that the deposit–solve–interpolate pipeline is self-adjoint, a property that helps conserve momentum.
 
 ---
 
@@ -160,6 +162,7 @@ All Fourier-space operations are expressed through a composable `Filter` class s
 | `Scale(B, σ)` | $\exp(\sigma^2/\Delta x^2 \cdot (\cos(k\Delta x)-1))$ | Discrete Gaussian smoothing |
 | `Cutoff(B)` | $\mathbf{1}[k \leq k_\text{Nyq}]$ | Hard Nyquist truncation |
 | `Potential()` | $-1/|\mathbf{k}|^2$ (zero mode = 0) | Poisson Green's function |
+| `CICWindow(B)` | $\prod_i \text{sinc}^2(k_i \Delta x / 2\pi)$, guarded at Nyquist | CIC assignment window (for deconvolution) |
 | `TSCWindow(B)` | $\prod_i \text{sinc}^3(k_i \Delta x / 2\pi)$, guarded at Nyquist | TSC assignment window (for deconvolution) |
 
 Operators: `__mul__` (pointwise product), `__add__` (sum), `__pow__` (power), `__invert__` (reciprocal), `__rmul__` (scalar left-multiply). All return `NotImplemented` for unsupported types, preserving Python's normal operator dispatch. Operations on scalars fall through to `__rmul__`, so `2.0 * filter` works correctly.
@@ -457,8 +460,8 @@ Plotting uses `with plt.style.context('dark_background')` (context manager, not 
 src/
   core/
     box.py           — Box: periodic domain, FFT wavenumber grids K and k
-    ops.py           — md_cic_nd, InterpND, gradient_2nd_order, garfield
-    filters.py       — Composable Fourier filters: Power_law, Scale, Cutoff, Potential
+    ops.py           — md_cic_nd, md_tsc_nd, InterpND, InterpTSC, gradient_4th_order, garfield
+    filters.py       — Composable Fourier filters: Power_law, Scale, Cutoff, Potential, CICWindow, TSCWindow
   diff/
     pm_grad.py       — pm_rollout, make_loss_fn, pm_rollout_cosmo (differentiable PM)
   physics/
@@ -589,7 +592,7 @@ The test suite comprises **54 tests** across two files, all passing under `pytes
 1. `test_md_cic_2d_mass_conservation` — total deposited mass equals particle count to $10^{-5}$.
 2. `test_interp2d_identity` — `Interp2D` returns exact cell values at integer positions.
 3. `test_box_wave_numbers` — `Box` generates correct $k_\text{min} = 2\pi/L$ and $k_\text{max} = N\pi/L$.
-4. `test_gradient_2nd_order` — FD gradient of $\sin(x)$ agrees with $\cos(x)$ to $10^{-2}$ on a 64-point grid.
+4. `test_gradient_4th_order` — FD gradient of $\sin(x)$ agrees with $\cos(x)$ to $10^{-2}$ on a 64-point grid.
 5. `test_box_3d_shapes` — `Box(3, 64, 50.0)` yields `K.shape = (3, 64, 64, 64)`.
 6. `test_potential_filter_3d` — `Potential()(box.K)` returns shape $(N, N, N)$.
 7. `test_garfield_3d` — 3D Gaussian random field returns correct shape.
@@ -639,7 +642,7 @@ Organised into seven test classes. Each test checks a specific physical property
 7. `test_pm_force_newton_third_law` — total force on a 2-particle system $= 0$ (momentum conservation).
 8. `test_pm_force_direction_attractive` — force on a particle points toward its neighbour (gravity is attractive), verified with nearest-image geometry.
 9. `test_single_fourier_mode_potential` — single cosine density mode → Poisson gives $\phi = -G A/k_0^2 \cos(kx)$ to $10^{-4}$.
-10. `test_gradient_of_potential_is_force` — `gradient_2nd_order` of $\sin(x)$ recovers $\cos(x)$ to $10^{-2}$.
+10. `test_gradient_of_potential_is_force` — `gradient_4th_order` of $\sin(x)$ recovers $\cos(x)$ to $10^{-2}$.
 
 **`TestP3MForce`**
 
@@ -727,7 +730,7 @@ since $\partial W / \partial \mathbf{x} = \partial W / \partial \mathbf{f}$ (the
 
 **FFT Poisson solve.** `jnp.fft.fftn` and `jnp.fft.ifftn` have registered VJPs in JAX (the VJP of a DFT is the conjugate DFT). Multiplication by the precomputed kernel $-1/|\mathbf{k}|^2$ is a pointwise linear operation with trivial gradient.
 
-**Finite-difference gradient (`gradient_2nd_order`).** `jnp.roll` is a linear cyclic-shift operation; its VJP is a roll in the opposite direction. The fourth-order stencil is a linear combination of rolls, so the gradient flows through without any special handling.
+**Finite-difference gradient (`gradient_4th_order`).** `jnp.roll` is a linear cyclic-shift operation; its VJP is a roll in the opposite direction. The fourth-order stencil is a linear combination of rolls, so the gradient flows through without any special handling.
 
 **Force interpolation (`InterpND`).** The bilinear/trilinear gather uses the same $2^d$ corner weights as CIC deposition (it is the transpose operator by design). All indexing is gather-style; gradients flow through the fractional weights.
 

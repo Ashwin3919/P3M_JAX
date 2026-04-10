@@ -166,10 +166,21 @@ md_cic_2d = md_cic_nd
 Interp2D  = InterpND
 
 
-def gradient_2nd_order(F, i):
-    """Second-order finite difference gradient along axis i."""
+def gradient_4th_order(F, i):
+    """Fourth-order accurate central finite-difference gradient along axis i.
+
+    Stencil coefficients [-1/12, 2/3, 0, -2/3, 1/12] give O(Δx⁴) truncation
+    error.  Returns the stencil numerator (not divided by Δx); the caller must
+    divide by box.res to obtain the physical gradient.
+
+    Periodic boundary conditions are handled implicitly by jnp.roll.
+    """
     return (1. / 12 * jnp.roll(F, 2, axis=i) - 2. / 3 * jnp.roll(F, 1, axis=i) +
             2. / 3 * jnp.roll(F, -1, axis=i) - 1. / 12 * jnp.roll(F, -2, axis=i))
+
+
+# Backward-compatible alias — prefer gradient_4th_order in new code.
+gradient_2nd_order = gradient_4th_order
 
 
 def garfield(B, P, T_filt, seed=None):

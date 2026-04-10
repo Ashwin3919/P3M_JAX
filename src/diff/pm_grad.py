@@ -167,27 +167,27 @@ def pm_rollout_cosmo(
 ):
     """Differentiable rollout w.r.t. cosmological parameters OmegaM, OmegaL.
 
-    Builds a temporary Cosmology object from the JAX-array parameters so
-    that jax.grad(argnums=(2, 3)) gives dL/d(OmegaM) and dL/d(OmegaL).
+    Builds a fresh Cosmology and PoissonVlasov from the JAX-array parameters
+    so that jax.grad(argnums=(2, 3)) gives dL/d(OmegaM) and dL/d(OmegaL).
+    The original system object is never mutated.
 
-    Note: system.cosmology.H0 is treated as fixed (Python float).
+    The Poisson kernel depends only on box geometry, not on OmegaM/OmegaL,
+    so the rebuild is numerically equivalent to the original system.
+
+    Note: system.cosmology.H0 is treated as a fixed Python float.
     To differentiate w.r.t. H0 as well, add it as an argument in the same way.
     """
     from src.physics.cosmology import Cosmology
+    from src.physics.system import PoissonVlasov
 
-    # Build a cosmology whose parameters live on the JAX tape.
     cosmo = Cosmology(H0=system.cosmology.H0, OmegaM=OmegaM, OmegaL=OmegaL)
-
-    # Temporarily swap the cosmology on the system object.
-    # system is a Python object — this swap is invisible to JAX's tracing.
-    orig_cosmo = system.cosmology
-    system.cosmology = cosmo
-    try:
-        result = pm_rollout(
-            init_pos, init_mom, a_init, n_steps, dt, system,
-            checkpoint=checkpoint,
-        )
-    finally:
-        system.cosmology = orig_cosmo
-
-    return result
+    override_system = PoissonVlasov(
+        system.box, cosmo, system.particle_mass,
+        solver=system.solver, assignment=system.assignment,
+        pp_window=system.pp_window, pp_softening=system.pp_softening,
+        pp_cutoff=system.pp_cutoff,
+    )
+    return pm_rollout(
+        init_pos, init_mom, a_init, n_steps, dt, override_system,
+        checkpoint=checkpoint,
+    )

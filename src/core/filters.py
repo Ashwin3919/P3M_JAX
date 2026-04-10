@@ -90,6 +90,29 @@ class Potential(Filter):
         Filter.__init__(self, lambda K: -_K_pow((K ** 2).sum(axis=0), -1.0))
 
 
+class CICWindow(Filter):
+    """CIC (Cloud-in-Cell) Fourier-space window function: W(k) = ∏_d sinc²(k_d Δx / 2π).
+
+    Used to build the deconvolved Poisson kernel that corrects for the CIC
+    mass-assignment bias in both the deposition and interpolation steps:
+
+        kernel = (Potential() / CICWindow(box) ** 2)(box.K)
+
+    Near-zero values at the Nyquist corner are clamped to 1 so that the
+    deconvolved kernel remains bounded.
+    """
+    def __init__(self, box):
+        dx = box.res
+
+        def f(K):
+            W = jnp.ones(K.shape[1:])
+            for k in K:   # iterate over spatial dimensions
+                W = W * jnp.sinc(k * dx / (2.0 * jnp.pi)) ** 2
+            return jnp.where(W > 1e-4, W, 1.0)
+
+        Filter.__init__(self, f)
+
+
 class TSCWindow(Filter):
     """TSC (B₂-spline) Fourier-space window function: W(k) = ∏_d sinc³(k_d Δx / 2π).
 
