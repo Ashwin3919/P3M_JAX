@@ -325,20 +325,47 @@ class TestPMRolloutDelegation:
 
 
 # ---------------------------------------------------------------------------
-# 7. P3M path is correctly blocked
+# 7. P3M Path Differentiability
 # ---------------------------------------------------------------------------
 
-class TestP3MNotDifferentiable:
-    """pm_rollout raises a clear error when called with solver='p3m'."""
+class TestP3MDifferentiability:
+    """pm_rollout gracefully traces the P3M short-range solver."""
 
-    def test_p3m_raises_on_pm_rollout(self):
-        """pm_rollout rejects solver='p3m' with a descriptive ValueError."""
+    def test_p3m_grad_does_not_raise_and_is_finite(self, init_state_2d):
+        """Gradient traces through P3M pipeline without NaN/errors."""
         box = Box(N=16, L=100.0, dim=2)
         system = PoissonVlasov(box, EDS_PRESET, particle_mass=1.0 / 16 ** 2,
                                solver="p3m", pp_cutoff=2.5)
-        key = jax.random.PRNGKey(0)
-        pos = jax.random.uniform(key, (16, 2), dtype=jnp.float64) * 90.0
-        mom = jnp.zeros((16, 2), dtype=jnp.float64)
+        init_pos, init_mom = init_state_2d
+        
+        loss_fn = make_loss_fn(system, a_init=0.1, n_steps=1, dt=0.01)
+        dpos = jax.jit(jax.grad(loss_fn, argnums=0))(init_pos, init_mom)
+        
+        assert dpos.shape == init_pos.shape
+        assert jnp.all(jnp.isfinite(dpos)), f"Non-finite grad in P3M rollout: {dpos}"
+        
+class TestP3MGradNumerical:
+    """Check that AD gradients for P3M match finite-difference estimates."""
+    
+    def _fd_grad(self, f, x, y, particle, dim, eps=1e-3):
+        xp = x.at[particle, dim].add( eps)
+        xm = x.at[particle, dim].add(-eps)
+        return (f(xp, y) - f(xm, y)) / (2.0 * eps)
 
-        with pytest.raises(ValueError, match="solver='pm'"):
-            pm_rollout(pos, mom, 0.1, 1, 0.01, system)
+    def test_p3m_fd_check_pos_component(self, init_state_2d):
+        """AD gradient of P3M loss w.r.t. pos[0,0] matches FD to within 1%."""
+        box = Box(N=16, L=100.0, dim=2)
+        system = PoissonVlasov(box, EDS_PRESET, particle_mass=1.0 / 16 ** 2,
+                               solver="p3m", pp_cutoff=2.5)
+        init_pos, init_mom = init_state_2d
+        loss_fn = make_loss_fn(system, a_init=0.1, n_steps=1, dt=0.01)
+
+        ad_grad  = float(jax.jit(jax.grad(loss_fn, argnums=0))(init_pos, init_mom)[0, 0])
+        fd_grad  = float(self._fd_grad(loss_fn, init_pos, init_mom, particle=0, dim=0))
+
+        rel_err = abs(ad_grad - fd_grad) / (abs(fd_grad) + 1e-12)
+        assert rel_err < 0.01, (
+            f"P3M AD={ad_grad:.6f}, FD={fd_grad:.6f}, rel_err={rel_err:.2e} — "
+            "AD gradient does not match finite differences"
+        )
+

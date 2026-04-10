@@ -13,21 +13,6 @@ Every op above has a JAX-defined VJP, so jax.grad flows through the
 entire chain.  Use pm_rollout as the forward function and wrap it with
 jax.value_and_grad (or jax.grad) to get gradients w.r.t. initial
 conditions.
-
-Memory note
------------
-Long rollouts store O(n_steps) intermediate states for backprop.
-Set checkpoint=True to apply jax.checkpoint per scan step — this
-recomputes each forward step during the backward pass (2x compute)
-but keeps memory O(1) in n_steps.
-
-Quick-start
------------
-    from src.diff import pm_rollout, make_loss_fn
-
-    loss_fn  = make_loss_fn(system, a_init=0.1, n_steps=50, dt=0.01)
-    grad_fn  = jax.jit(jax.value_and_grad(loss_fn, argnums=(0, 1)))
-    loss, (dpos, dmom) = grad_fn(init_pos, init_mom)
 """
 
 import jax
@@ -74,12 +59,10 @@ def pm_rollout(
     final_state : State
     trajectory  : State with leading axis n_steps  (only when return_trajectory=True)
     """
-    if system.solver != "pm":
-        raise ValueError(
-            "pm_rollout only supports solver='pm'. "
-            "The PP short-range path uses Morton sorting which is not differentiable."
-        )
-
+    # (Removed block on p3m — now supported via safely differentiable _pp_force)
+    # The short-range PP path uses Morton sorting, but JAX correctly tracks 
+    # gradients through the sorted indices via standard array indexing.
+    
     init_state = State(
         jnp.asarray(a_init, dtype=init_pos.dtype),
         init_pos,

@@ -113,7 +113,11 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
             r_vec = r_vec - L * jnp.round(r_vec / L)      # minimum image
 
             r_bare2 = jnp.sum(r_vec ** 2, axis=-1)        # (2W+1,) unsoftened
-            r_bare  = jnp.sqrt(r_bare2)
+
+            # Safe distance to prevent `nan` gradients from sqrt(0) (e.g., self-interactions)
+            safe_r_bare2 = jnp.where(r_bare2 > 0, r_bare2, 1.0)
+            r_bare  = jnp.sqrt(safe_r_bare2)
+            
             r_soft2 = r_bare2 + eps ** 2                   # softened squared
             r_soft3 = r_soft2 ** 1.5                       # |r_soft|^3
 
@@ -121,12 +125,15 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
             erfc_w = jss.erfc(r_bare / alpha)              # (2W+1,)
 
             # Exclude: self, out-of-range, and beyond physical cutoff
-            valid = (js_raw >= 0) & (js_raw < N_p) & (js_raw != i) & (r_bare < r_cut)
+            valid = (js_raw >= 0) & (js_raw < N_p) & (js_raw != i) & (r_bare2 < r_cut**2)
+            
+            # Prevent 0 division in masked elements
+            safe_r_soft3 = jnp.where(valid, r_soft3, 1.0)
 
             # F = G/a · erfc(r/alpha) / |r_soft|^3 · r_vec   (same units as PM acc)
             G_eff = self.cosmology.G / a
             f = G_eff * jnp.sum(
-                valid[:, None] * erfc_w[:, None] * r_vec / r_soft3[:, None], axis=0
+                valid[:, None] * erfc_w[:, None] * r_vec / safe_r_soft3[:, None], axis=0
             )   # (dim,)
             return f
 

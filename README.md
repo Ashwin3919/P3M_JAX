@@ -139,7 +139,6 @@ results/default/
 ```
 
 VTK files are compatible with ParaView 5.x+.
-
 ---
 
 ## Running Tests
