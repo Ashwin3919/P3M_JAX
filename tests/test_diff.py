@@ -20,6 +20,8 @@ import pytest
 from src.core.box import Box
 from src.physics.cosmology import EDS_PRESET, LCDM_PRESET
 from src.physics.system import PoissonVlasov
+from src.solver.integrator import step_chunk
+from src.solver.state import State
 from src.diff import pm_rollout, make_loss_fn
 
 
@@ -263,7 +265,67 @@ class TestPMGradMultiStep:
 
 
 # ---------------------------------------------------------------------------
-# 5. P3M path is correctly blocked
+# 5. step_chunk checkpoint integration
+# ---------------------------------------------------------------------------
+
+class TestStepChunkCheckpoint:
+    """step_chunk(checkpoint=True) must give the same result as checkpoint=False."""
+
+    def test_checkpoint_matches_no_checkpoint_forward(self, small_pm_system, init_state_2d):
+        """Forward pass: step_chunk with/without checkpoint gives identical states."""
+        init_pos, init_mom = init_state_2d
+        s0 = State(jnp.asarray(0.1), init_pos, init_mom)
+
+        s_no_ckpt = step_chunk(small_pm_system, s0, dt=0.01, save_every=5, checkpoint=False)
+        s_ckpt    = step_chunk(small_pm_system, s0, dt=0.01, save_every=5, checkpoint=True)
+
+        assert jnp.allclose(s_no_ckpt.position, s_ckpt.position, atol=1e-10)
+        assert jnp.allclose(s_no_ckpt.momentum, s_ckpt.momentum, atol=1e-10)
+
+    def test_checkpoint_grad_matches_no_checkpoint(self, small_pm_system, init_state_2d):
+        """Backward pass: gradients with/without checkpoint are numerically identical."""
+        init_pos, init_mom = init_state_2d
+
+        def loss(pos, mom, ckpt):
+            s0    = State(jnp.asarray(0.1, dtype=jnp.float64), pos, mom)
+            final = step_chunk(small_pm_system, s0, dt=0.01, save_every=3, checkpoint=ckpt)
+            return jnp.mean(final.position ** 2)
+
+        grad_no_ckpt = jax.jit(jax.grad(lambda p, m: loss(p, m, False), argnums=0))(init_pos, init_mom)
+        grad_ckpt    = jax.jit(jax.grad(lambda p, m: loss(p, m, True),  argnums=0))(init_pos, init_mom)
+
+        assert jnp.allclose(grad_no_ckpt, grad_ckpt, rtol=1e-5, atol=1e-8), \
+            "step_chunk checkpoint changed gradient values"
+
+
+# ---------------------------------------------------------------------------
+# 6. pm_rollout delegates to step_chunk (no duplicate scan logic)
+# ---------------------------------------------------------------------------
+
+class TestPMRolloutDelegation:
+    """pm_rollout (non-trajectory) must give the same result as step_chunk directly."""
+
+    def test_pm_rollout_matches_step_chunk(self, small_pm_system, init_state_2d):
+        """pm_rollout without return_trajectory produces the same state as step_chunk."""
+        init_pos, init_mom = init_state_2d
+        a_init  = 0.1
+        n_steps = 5
+        dt      = 0.01
+
+        # pm_rollout path
+        final_rollout = pm_rollout(init_pos, init_mom, a_init, n_steps, dt, small_pm_system)
+
+        # step_chunk path
+        s0    = State(jnp.asarray(a_init, dtype=jnp.float64), init_pos, init_mom)
+        final_chunk = step_chunk(small_pm_system, s0, dt=dt, save_every=n_steps)
+
+        assert jnp.allclose(final_rollout.position, final_chunk.position, atol=1e-10)
+        assert jnp.allclose(final_rollout.momentum, final_chunk.momentum, atol=1e-10)
+        assert jnp.allclose(final_rollout.time,     final_chunk.time,     atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# 7. P3M path is correctly blocked
 # ---------------------------------------------------------------------------
 
 class TestP3MNotDifferentiable:

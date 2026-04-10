@@ -32,7 +32,7 @@ P3M_JAX/
 │   ├── physics/                # Cosmology, PoissonVlasov system, Zeldovich ICs
 │   ├── solver/                 # State, KDK leapfrog, lax.scan / while_loop
 │   └── utils/                  # Power spectrum, VTK I/O
-├── tests/                      # 54 unit and physics tests
+├── tests/                      # 89 unit and physics tests
 └── results/                    # Auto-created; outputs organised by config name
 ```
 
@@ -87,6 +87,7 @@ python main.py --config configs/default.json
   "OmegaM": 1.0,         // matter density parameter
   "OmegaL": 0.0,         // cosmological constant
   "precision": "float64", // "float16" | "float32" | "float64"
+  "assignment": "cic",   // mass assignment: "cic" (Cloud-in-Cell) | "tsc" (Triangular Shaped Cloud)
 
   // --- Force solver ---
   "solver": "pm",        // "pm" | "p3m"
@@ -174,7 +175,7 @@ See `src/diff/pm_grad.py` for the full API.
 
 ## Method Summary
 
-**Force computation (PM mode):** Cloud-in-Cell (CIC) mass deposition onto a dual-resolution grid (force grid at 2× the mass grid resolution), FFT Poisson solve with a precomputed potential kernel, second-order finite-difference gradient, and bilinear/trilinear interpolation back to particle positions.
+**Force computation (PM mode):** Cloud-in-Cell (CIC) or Triangular Shaped Cloud (TSC) mass deposition onto a dual-resolution grid (force grid at 2× the mass grid resolution), FFT Poisson solve with a precomputed potential kernel (deconvolved for the chosen assignment scheme), second-order finite-difference gradient, and force interpolation back to particle positions.
 
 **Force computation (P3M mode):** PM long-range force augmented by a direct particle-particle short-range correction. Particles are sorted along a Morton Z-curve; a sliding window of width `2*pp_window+1` cells accumulates PP forces using an erfc force-splitting kernel that removes the PM contribution below `pp_cutoff` cell widths.
 
@@ -182,7 +183,7 @@ See `src/diff/pm_grad.py` for the full API.
 
 **Time integration:** KDK leapfrog in scale factor `a`. Fixed stepping uses `jax.lax.scan`; adaptive stepping uses `jax.lax.while_loop` with a CFL condition estimated from the maximum particle velocity.
 
-**Power spectrum:** Annular k-bin averaging with CIC window deconvolution (P_corr = P / W²) and Poisson shot noise subtraction.
+**Power spectrum:** Annular k-bin averaging with assignment-scheme window deconvolution (CIC: P / W², TSC: P / W³) and Poisson shot noise subtraction.
 
 ---
 

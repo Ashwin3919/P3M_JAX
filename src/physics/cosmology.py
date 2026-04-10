@@ -30,7 +30,9 @@ class Cosmology:
         The integral is started from eps=1e-5 (not 0) to avoid the singularity
         at a→0.  The additive 1e-5 term approximates D(eps)≈eps for early-matter
         domination, but introduces a small (H0-dependent) offset at a < 0.1.
-        Use this function only as a diagnostic; the simulation does not call it.
+
+        Called by Zeldovich ICs via growing_mode_normalized to correct LCDM
+        initial momenta. Use growing_mode_normalized for a dimensionless D(a).
         """
         if isinstance(a, jnp.ndarray):
             return jnp.array([self.growing_mode(float(b)) for b in a])
@@ -42,6 +44,24 @@ class Cosmology:
             # The + 0.00001 seeds D(eps) ≈ eps for matter domination.
             return factor * self.da(a) / a * \
                 quad(lambda b: float(self.da(b)) ** (-3), 0.00001, a)[0] + 0.00001
+
+    def growth_rate(self, a):
+        """Logarithmic growth rate f = d ln D / d ln a (Linder 2005 approximation).
+
+        f(a) ≈ OmegaM(a)^0.55  accurate to ~0.2% for flat LCDM.
+
+        For EdS: OmegaM(a) = 1 for all a → f = 1 exactly.
+        For LCDM: OmegaM(a) → 1 at early times and → 0 at late times,
+        so f decreases from 1 at a ≪ 1 towards ~0.55 at a = 1.
+
+        OmegaM(a) = OmegaM / [a³ (OmegaL + OmegaM a⁻³ + OmegaK a⁻²)]
+        """
+        if isinstance(a, jnp.ndarray):
+            return jnp.array([self.growth_rate(float(b)) for b in a])
+        a = float(a)
+        H2_normed = self.OmegaL + self.OmegaM * a ** -3 + self.OmegaK * a ** -2
+        OmegaM_a  = self.OmegaM / (a ** 3 * H2_normed)
+        return float(OmegaM_a ** 0.55)
 
 # Presets for internal reference
 LCDM_PRESET = Cosmology(68.0, 0.31, 0.69)

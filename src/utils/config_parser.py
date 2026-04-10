@@ -94,6 +94,13 @@ def load_config(config_path: str) -> dict:
             f"Config '{config_path}': 'solver' must be 'pm' or 'p3m', got '{solver}'."
         )
 
+    # Validate mass-assignment scheme
+    assignment = config.get('assignment', 'cic')
+    if assignment not in ('cic', 'tsc'):
+        raise ValueError(
+            f"Config '{config_path}': 'assignment' must be 'cic' or 'tsc', got '{assignment}'."
+        )
+
     # Validate value ranges
     _validate_ranges(config, config_path)
 

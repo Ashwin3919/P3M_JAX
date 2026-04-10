@@ -6,7 +6,7 @@
 
 ## Abstract
 
-This code "P3M-JAX", a cosmological N-body simulation framework implementing the Particle-Particle-Particle-Mesh (P3M) algorithm in the JAX numerical computing library. The code solves the collisionless Boltzmann equation coupled to Poisson's equation in an expanding Friedmann-Lemaître-Robertson-Walker (FLRW) universe, using comoving coordinates and the Kick-Drift-Kick (KDK) leapfrog integrator. The implementation is fully dimension-agnostic, supporting two-dimensional and three-dimensional domains via a single `dim` parameter with no code duplication. The Zeldovich approximation generates self-consistent initial conditions from a user-specified primordial power spectrum. Force computation supports two runtime-selectable modes: a pure Particle-Mesh (PM) mode using Cloud-in-Cell (CIC) deposition, FFT-based Poisson solution, second-order finite-difference gradient, and bilinear/trilinear force interpolation; and a full P3M mode that augments the PM long-range force with a short-range direct particle-particle correction using a Morton Z-curve sorted sliding window and an error-function force-splitting kernel. Time integration supports both fixed $\Delta a$ stepping via `jax.lax.scan` and a CFL-adaptive scheme via `jax.lax.while_loop`, which automatically refines the timestep during structure formation. Robustness features include per-step NaN/Inf detection, comprehensive config value validation, and an OOM guard for large trajectory stacking. JAX's XLA compilation delivers hardware-accelerated performance on CPU, GPU, and Apple Silicon without platform-specific code. Outputs include particle and density snapshots in Legacy VTK format and the matter power spectrum $P(k)$, corrected for CIC window function aliasing and Poisson shot noise. The framework is validated by 54 automated tests spanning unit, integration, and physics correctness checks.
+This code "P3M-JAX", a cosmological N-body simulation framework implementing the Particle-Particle-Particle-Mesh (P3M) algorithm in the JAX numerical computing library. The code solves the collisionless Boltzmann equation coupled to Poisson's equation in an expanding Friedmann-Lemaître-Robertson-Walker (FLRW) universe, using comoving coordinates and the Kick-Drift-Kick (KDK) leapfrog integrator. The implementation is fully dimension-agnostic, supporting two-dimensional and three-dimensional domains via a single `dim` parameter with no code duplication. The Zeldovich approximation generates self-consistent initial conditions from a user-specified primordial power spectrum. Force computation supports two runtime-selectable modes: a pure Particle-Mesh (PM) mode using Cloud-in-Cell (CIC) deposition, FFT-based Poisson solution, second-order finite-difference gradient, and bilinear/trilinear force interpolation; and a full P3M mode that augments the PM long-range force with a short-range direct particle-particle correction using a Morton Z-curve sorted sliding window and an error-function force-splitting kernel. Time integration supports both fixed $\Delta a$ stepping via `jax.lax.scan` and a CFL-adaptive scheme via `jax.lax.while_loop`, which automatically refines the timestep during structure formation. Robustness features include per-step NaN/Inf detection, comprehensive config value validation, and an OOM guard for large trajectory stacking. JAX's XLA compilation delivers hardware-accelerated performance on CPU, GPU, and Apple Silicon without platform-specific code. Outputs include particle and density snapshots in Legacy VTK format and the matter power spectrum $P(k)$, corrected for CIC window function aliasing and Poisson shot noise. The framework is validated by 89 automated tests spanning unit, integration, and physics correctness checks.
 
 This codebase is currently experimental and under active development. The implementation is suitable for research prototyping and educational use, while interfaces and defaults may evolve as validation and feature work continue.
 
@@ -61,9 +61,9 @@ The linear growth factor $D(a)$ is computed numerically via the Heath (1977) int
 
 $$D(a) = \frac{5}{2} \Omega_M \frac{H(a)}{a} \int_0^a \frac{da'}{[a' H(a')]^3}. \tag{5}$$
 
-The integral is evaluated using `scipy.integrate.quad` starting from a lower limit of $\varepsilon_0 = 10^{-5}$ to avoid the $1/a^3$ singularity at $a \to 0$; a seed value of $10^{-5}$ is added to approximate $D(\varepsilon_0) \approx \varepsilon_0$ in the matter-dominated regime. This function is available as `cosmology.growing_mode(a)` and is used diagnostically; the simulation itself does not call it at runtime.
+The integral is evaluated using `scipy.integrate.quad` starting from a lower limit of $\varepsilon_0 = 10^{-5}$ to avoid the $1/a^3$ singularity at $a \to 0$; a seed value of $10^{-5}$ is added to approximate $D(\varepsilon_0) \approx \varepsilon_0$ in the matter-dominated regime. This function is available as `cosmology.growing_mode(a)` and is called by the Zeldovich IC generator to compute the LCDM growth-factor correction (Section 3.3).
 
-**Note:** The additive $10^{-5}$ offset introduces a small ($\lesssim 0.1\%$ for $a \gtrsim 2$, $\lesssim 13\%$ for $a \sim 0.2$ with $H_0 = 70$) fractional bias at small scale factors because $H_0^{-2} \cdot a$ can be comparable to $10^{-5}$ for typical $H_0$ values. This does not affect the simulation, which does not use the growth factor.
+**Note:** The additive $10^{-5}$ offset introduces a small ($\lesssim 0.1\%$ for $a \gtrsim 2$, $\lesssim 13\%$ for $a \sim 0.2$ with $H_0 = 70$) fractional bias at small scale factors. This bias cancels in the ratio $D_\text{cosmo}(a) / D_\text{EdS}(a)$ used by the Zeldovich generator, because both cosmologies share the same $H_0$ and thus carry the same additive offset.
 
 ---
 
@@ -89,11 +89,13 @@ where $\hat{\xi}$ is the FFT of a white-noise field drawn from `jax.random.norma
 
 Particles are placed on a regular Lagrangian grid $\mathbf{q}_i$ and displaced:
 
-$$\mathbf{x}(a) = \mathbf{q} + a \, \mathbf{u}(\mathbf{q}), \qquad \mathbf{p}(a) = a \, \mathbf{u}(\mathbf{q}), \tag{8}$$
+$$\mathbf{x}(a) = \mathbf{q} + R_D \, a \, \mathbf{u}(\mathbf{q}), \qquad \mathbf{p}(a) = f \, R_D \, a \, \mathbf{u}(\mathbf{q}), \tag{8}$$
 
 where the displacement field is
 
-$$u_i(\mathbf{q}) = -\partial_i \phi / \Delta x, \quad i = 0, \ldots, d-1. \tag{9}$$
+$$u_i(\mathbf{q}) = -\partial_i \phi / \Delta x, \quad i = 0, \ldots, d-1, \tag{9}$$
+
+$R_D = D_\text{cosmo}(a) / D_\text{EdS}(a)$ is the growth-factor ratio relative to a same-$H_0$ Einstein–de Sitter reference (equal to 1 at early times; $< 1$ at late times for $\Lambda$CDM), and $f = d\ln D / d\ln a \approx \Omega_M(a)^{0.55}$ is the logarithmic growth rate (Linder 2005). For EdS cosmology $R_D = 1$ and $f = 1$, recovering $\mathbf{p} = a\,\mathbf{u}$ exactly.
 
 The gradient is computed using the same fourth-order finite-difference stencil as the force pipeline (Section 4.4). The module-private function `_grid_to_particles(B, X)` reshapes a $(d, N, \ldots)$ grid array to the $(N^d, d)$ particle coordinate array by `.reshape(dim, -1).T`. Particle mass is $m_p = (N_f / N_m)^d$, where $N_f$ and $N_m$ are the linear resolutions of the force and mass grids respectively.
 
@@ -112,13 +114,21 @@ Two `Box` instances are maintained throughout the simulation:
 
 `PoissonVlasov` is constructed with `B_f`; the mass box `B_m` is only used in the `main.py` I/O loop.
 
-### 4.2 Cloud-in-Cell Mass Deposition
+### 4.2 Mass Deposition Schemes
 
-CIC distributes each particle's mass over $2^d$ neighbouring cells. For a particle at fractional grid position $\mathbf{f} = \mathbf{x} / \Delta x - \lfloor \mathbf{x} / \Delta x \rfloor$, the weight assigned to the corner offset $\boldsymbol{\delta} \in \{0,1\}^d$ is
+Two mass assignment schemes are supported, selected via `"assignment"` in the config.
 
-$$W(\boldsymbol{\delta}) = \prod_{i=0}^{d-1} \begin{cases} 1 - f_i & \delta_i = 0 \\ f_i & \delta_i = 1 \end{cases}. \tag{10}$$
+**Cloud-in-Cell (CIC, default).** Distributes each particle's mass over $2^d$ neighbouring cells. For a particle at fractional grid position $\mathbf{f} = \mathbf{x} / \Delta x - \lfloor \mathbf{x} / \Delta x \rfloor$, the weight assigned to the corner offset $\boldsymbol{\delta} \in \{0,1\}^d$ is
 
-`md_cic_nd(shape, pos)` unrolls the $2^d$ corner loop at trace time using `itertools.product([0,1], repeat=d)`, producing a fixed-size XLA scatter-add graph. Cell indices are wrapped modulo `shape` for periodic boundary conditions. `shape` is declared a static `jit` argument so the graph is reused across calls with the same grid resolution.
+$$W_\text{CIC}(\boldsymbol{\delta}) = \prod_{i=0}^{d-1} \begin{cases} 1 - f_i & \delta_i = 0 \\ f_i & \delta_i = 1 \end{cases}. \tag{10}$$
+
+`md_cic_nd(shape, pos)` unrolls the $2^d$ corner loop at trace time using `itertools.product([0,1], repeat=d)`, producing a fixed-size XLA scatter-add graph.
+
+**Triangular Shaped Cloud (TSC).** Distributes mass over $3^d$ cells using the $B_2$ quadratic spline kernel. For fractional offset $dx_i = f_i - \text{round}(f_i) \in [-0.5, 0.5)$ relative to the nearest grid point:
+
+$$w_i(\delta) = \begin{cases} \frac{1}{2}(0.5 - dx_i)^2 & \delta = -1 \\ \frac{3}{4} - dx_i^2 & \delta = 0 \\ \frac{1}{2}(0.5 + dx_i)^2 & \delta = +1 \end{cases}. \tag{10b}$$
+
+`md_tsc_nd(shape, pos)` unrolls the $3^d$ corner loop at trace time. The Fourier-space TSC window $W_\text{TSC}(\mathbf{k}) = \prod_i \text{sinc}^3(k_i \Delta x / 2\pi)$ is applied as a deconvolution factor in both the Poisson kernel (`TSCWindow` filter) and the power spectrum output. Cell indices are wrapped modulo `shape` for periodic boundary conditions. `shape` is declared a static `jit` argument so the graph is reused across calls with the same grid resolution.
 
 ### 4.3 Fourier-Space Poisson Solver
 
@@ -150,6 +160,7 @@ All Fourier-space operations are expressed through a composable `Filter` class s
 | `Scale(B, σ)` | $\exp(\sigma^2/\Delta x^2 \cdot (\cos(k\Delta x)-1))$ | Discrete Gaussian smoothing |
 | `Cutoff(B)` | $\mathbf{1}[k \leq k_\text{Nyq}]$ | Hard Nyquist truncation |
 | `Potential()` | $-1/|\mathbf{k}|^2$ (zero mode = 0) | Poisson Green's function |
+| `TSCWindow(B)` | $\prod_i \text{sinc}^3(k_i \Delta x / 2\pi)$, guarded at Nyquist | TSC assignment window (for deconvolution) |
 
 Operators: `__mul__` (pointwise product), `__add__` (sum), `__pow__` (power), `__invert__` (reciprocal), `__rmul__` (scalar left-multiply). All return `NotImplemented` for unsupported types, preserving Python's normal operator dispatch. Operations on scalars fall through to `__rmul__`, so `2.0 * filter` works correctly.
 

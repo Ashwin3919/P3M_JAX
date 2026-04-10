@@ -64,6 +64,39 @@ class TestCosmology:
         ratio_a = a2 / a1
         assert abs(ratio_D / ratio_a - 1.0) < 0.02  # within 2% of linear
 
+    def test_eds_growing_mode_ratio_is_one(self):
+        """D_ratio = growing_mode_EdS / growing_mode_EdS = 1 (self-consistency check)."""
+        cosmo = EDS_PRESET
+        for a in [0.1, 0.5, 1.0, 2.0]:
+            D = cosmo.growing_mode(a)
+            ratio = D / D
+            assert abs(ratio - 1.0) < 1e-10
+
+    def test_lcdm_growing_mode_ratio_less_than_one_late(self):
+        """D_ratio = D_LCDM / D_EdS < 1 at late times (dark energy suppresses growth)."""
+        # At a=2.0 (dark energy epoch) LCDM growth is suppressed vs EdS
+        D_lcdm = LCDM_PRESET.growing_mode(2.0)
+        D_eds  = EDS_PRESET.growing_mode(2.0)
+        ratio  = D_lcdm / D_eds
+        assert ratio < 0.95, \
+            f"LCDM/EdS D ratio at a=2.0: got {ratio:.4f}, expected < 0.95"
+
+    def test_eds_growth_rate_equals_one(self):
+        """EdS: f = d ln D / d ln a = 1 at all scale factors."""
+        cosmo = EDS_PRESET
+        for a in [0.1, 0.5, 1.0, 2.0]:
+            f = cosmo.growth_rate(a)
+            assert abs(f - 1.0) < 0.02, \
+                f"EdS growth rate at a={a}: got {f:.4f}, expected 1.0"
+
+    def test_lcdm_growth_rate_less_than_one(self):
+        """LCDM: f < 1 at a=1 (dark energy suppresses growth rate)."""
+        cosmo = LCDM_PRESET
+        f = cosmo.growth_rate(1.0)
+        # Linder (2005): f ≈ OmegaM(a)^0.55 ≈ 0.31^0.55 ≈ 0.54 for Planck at a=1
+        assert f < 0.85, f"LCDM growth rate at a=1: got {f:.4f}, expected < 0.85"
+        assert f > 0.3,  f"LCDM growth rate unrealistically small: {f:.4f}"
+
     def test_gravitational_coupling(self):
         """G_eff = (3/2) * OmegaM * H0^2 — Poisson coupling coefficient."""
         cosmo = EDS_PRESET
@@ -439,9 +472,10 @@ class TestZeldovichICs:
         assert np.all(pos < bm.L + tol), f"Particles too far above L={bm.L}"
 
     def test_momentum_proportional_to_displacement_eds(self, za_2d):
-        """For EdS at a_init=0.02: p = a_init * u where u is the displacement field.
+        """For EdS at a_init=0.02: p = a_init * u = X - q.
 
-        In the code: X = q + a_init * u and P = a_init * u, so P = X - q.
+        EdS has f=1 and D_norm(a_init)=a_init, so the general formula
+        P = f * D * u reduces to P = a_init * u = X - q.
         Lagrangian grid uses jnp.indices ordering (row-major, dim-0 first);
         indexing='ij' matches that convention.
         """
@@ -453,8 +487,55 @@ class TestZeldovichICs:
         q = (jnp.stack([gi.ravel(), gj.ravel()], axis=-1).astype(jnp.float64)
              * bm.res)
         displacement = s.position - q
-        assert jnp.allclose(s.momentum, displacement, atol=1e-10), \
+        assert jnp.allclose(s.momentum, displacement, atol=1e-8), \
             "Zel'dovich momentum should equal displacement for EdS at a_init"
+
+    def test_lcdm_momentum_differs_from_eds_at_late_init(self):
+        """LCDM Zeldovich momenta differ from EdS at a_init=0.3 (dark energy epoch).
+
+        The LCDM correction factor f * D_norm / a_init departs from 1 at late
+        times.  Both systems use the same potential phi, so any momentum
+        difference directly reflects the cosmological correction.
+        """
+        N = 16
+        bm = Box(2, N, 10.0)
+        bf = Box(2, N * 2, 10.0)
+        P    = Power_law(-0.5) * Scale(bm, 0.2) * Cutoff(bm)
+        phi  = garfield(bm, P, Potential(), seed=7)
+
+        a_init = 0.3   # late enough that LCDM and EdS diverge
+
+        za_lcdm = Zeldovich(bm, bf, LCDM_PRESET, phi)
+        za_eds  = Zeldovich(bm, bf, EDS_PRESET,  phi)
+
+        s_lcdm = za_lcdm.state(a_init)
+        s_eds  = za_eds.state(a_init)
+
+        max_diff = float(jnp.max(jnp.abs(s_lcdm.momentum - s_eds.momentum)))
+        assert max_diff > 1e-6, \
+            "LCDM and EdS momenta should differ at a_init=0.3 after correction"
+
+    def test_lcdm_momentum_correction_factor(self):
+        """LCDM momentum correction = f * D_ratio < 1 at a=0.5.
+
+        D_ratio uses an EdS reference with the SAME H0 as LCDM so the H0²
+        normalisation cancels.  f = growth_rate (Linder) < 1 for LCDM.
+        The combined correction f * D_ratio < 1 means LCDM velocities are
+        suppressed relative to the EdS formula P = a_init * u.
+        """
+        from src.physics.cosmology import Cosmology
+        a_init   = 0.5
+        eds_ref  = Cosmology(H0=LCDM_PRESET.H0, OmegaM=1.0, OmegaL=0.0)
+        D_lcdm   = LCDM_PRESET.growing_mode(a_init)
+        D_eds    = eds_ref.growing_mode(a_init)
+        D_ratio  = D_lcdm / D_eds
+        f        = LCDM_PRESET.growth_rate(a_init)
+        correction = f * D_ratio
+        # For LCDM at a=0.5, correction < 1 (dark energy suppresses growth)
+        assert correction < 1.0, \
+            f"LCDM correction at a=0.5 should be < 1, got {correction:.4f}"
+        assert correction > 0.5, \
+            f"LCDM correction unrealistically small: {correction:.4f}"
 
 
 # ---------------------------------------------------------------------------

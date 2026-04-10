@@ -35,7 +35,7 @@ import jax.numpy as jnp
 from functools import partial
 
 from src.solver.state import State
-from src.solver.integrator import leap_frog
+from src.solver.integrator import leap_frog, step_chunk
 
 
 # ---------------------------------------------------------------------------
@@ -86,17 +86,20 @@ def pm_rollout(
         init_mom,
     )
 
-    def _step(state, _):
-        new_state = leap_frog(dt, system, state)
-        return new_state, new_state if return_trajectory else None
-
-    step_fn = jax.checkpoint(_step) if checkpoint else _step
-
-    final_state, traj = jax.lax.scan(step_fn, init_state, xs=None, length=n_steps)
-
     if return_trajectory:
+        # Trajectory case: must emit one state per step, so we keep the scan
+        # here and apply checkpoint per-step manually.
+        def _step(state, _):
+            new_state = leap_frog(dt, system, state)
+            return new_state, new_state
+
+        step_fn = jax.checkpoint(_step) if checkpoint else _step
+        final_state, traj = jax.lax.scan(step_fn, init_state, xs=None, length=n_steps)
         return final_state, traj
-    return final_state
+
+    # Non-trajectory case: delegate to step_chunk to avoid duplicating scan logic.
+    # step_chunk already handles checkpoint and lax.scan over leap_frog.
+    return step_chunk(system, init_state, dt, n_steps, checkpoint=checkpoint)
 
 
 # ---------------------------------------------------------------------------

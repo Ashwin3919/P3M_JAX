@@ -4,7 +4,7 @@ Float64 is enabled for the entire session via conftest.py.
 """
 import jax.numpy as jnp
 import pytest
-from src.core.ops import md_cic_2d, Interp2D, md_cic_nd, InterpND, gradient_2nd_order
+from src.core.ops import md_cic_2d, Interp2D, md_cic_nd, InterpND, md_tsc_nd, InterpTSC, gradient_2nd_order
 from src.core.box import Box
 
 
@@ -99,6 +99,128 @@ def test_interpnd_3d_grid_points():
     out = interp(pos)
     assert jnp.allclose(out[0], data[0, 0, 0], atol=1e-5)
     assert jnp.allclose(out[1], data[1, 2, 3], atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: TSC mass deposition and interpolation
+# ---------------------------------------------------------------------------
+
+def test_md_tsc_nd_mass_conservation_2d():
+    """TSC total deposited mass equals particle count (2D)."""
+    shape = (64, 64)
+    pos = jnp.array([[10.5, 10.5], [20.2, 30.8], [63.9, 63.9]])
+    rho = md_tsc_nd(shape, pos)
+    assert jnp.allclose(rho.sum(), len(pos), atol=1e-5)
+
+
+def test_md_tsc_nd_mass_conservation_3d():
+    """TSC total deposited mass equals particle count (3D)."""
+    shape = (8, 8, 8)
+    pos = jnp.array([[1.5, 1.5, 1.5], [4.5, 4.5, 4.5]])
+    rho = md_tsc_nd(shape, pos)
+    assert jnp.allclose(rho.sum(), 2.0, atol=1e-5)
+
+
+def test_md_tsc_nd_unit_deposit_at_grid_center():
+    """Particle at an exact integer grid point deposits entirely into that cell.
+
+    For TSC the nearest-grid-point is round(pos) = pos exactly, so dx=0 and the
+    only non-zero weight is w[0] = 0.75 - 0² = 0.75... wait, w[-1]=w[+1]=0 but
+    w[0] = 0.75 - 0 = 0.75 → only 0.75 deposited? No: the ND weight is the
+    product of 1D weights.  For a 2D particle: w_total = w_x[0] * w_y[0]
+    = (0.75-0)*(0.75-0) = 0.5625 for corners (0,0).
+    Actually TSC at exact integer pos has dx=0:
+      w[-1]=0.5*(0.5-0)²=0.125, w[0]=0.75, w[+1]=0.5*(0.5+0)²=0.125 → sum=1.
+    The particle weight is split across 3 cells per axis.  The central cell
+    receives w[0]^d = 0.75^d of the mass.  Total across all 3^d cells = 1.
+    This test just verifies mass conservation and correct central weight.
+    """
+    shape = (8, 8)
+    pos = jnp.array([[4.0, 4.0]])   # exactly on grid point
+    rho = md_tsc_nd(shape, pos)
+    assert jnp.allclose(rho.sum(), 1.0, atol=1e-5)
+    # Central cell gets 0.75^2 = 0.5625 of the mass
+    assert jnp.allclose(rho[4, 4], 0.75 ** 2, atol=1e-5)
+
+
+def test_md_tsc_nd_vs_cic_smoother():
+    """TSC deposit is smoother than CIC: smaller peak cell mass for same particle.
+
+    Both deposit 1 particle at the same off-integer position.  The TSC peak
+    must be ≤ the CIC peak because TSC spreads mass over more cells.
+    """
+    shape = (16, 16)
+    pos   = jnp.array([[3.3, 7.7]])
+    rho_cic = md_cic_nd(shape, pos)
+    rho_tsc = md_tsc_nd(shape, pos)
+    assert float(rho_tsc.max()) <= float(rho_cic.max()) + 1e-6
+
+
+def test_interp_tsc_constant_field():
+    """InterpTSC returns the exact constant for a uniform field (partition of unity).
+
+    TSC weights sum to 1 at every position, so a uniform field must be
+    reproduced exactly regardless of particle position.
+    """
+    constant = 7.5
+    data = jnp.ones((8, 8), dtype=jnp.float64) * constant
+    interp = InterpTSC(data)
+    pos = jnp.array([[0.0, 0.0], [1.3, 2.7], [3.5, 5.5]], dtype=jnp.float64)
+    results = interp(pos)
+    assert jnp.allclose(results, constant, atol=1e-6)
+
+
+def test_interp_tsc_linear_field():
+    """InterpTSC is exact for linear fields (polynomial reproduction of degree 1).
+
+    B₂-spline kernels reproduce polynomials up to degree 2, so any linear
+    function f(x,y) = ax + by must be recovered exactly.
+    """
+    N = 16
+    x = jnp.arange(N, dtype=jnp.float64)
+    X, Y = jnp.meshgrid(x, x, indexing='ij')
+    data   = 2.0 * X + 3.0 * Y
+    interp = InterpTSC(data)
+    # Positions away from boundaries to avoid wrap-around artifacts
+    pos = jnp.array([[4.3, 7.8], [2.1, 9.6]], dtype=jnp.float64)
+    results  = interp(pos)
+    expected = 2.0 * pos[:, 0] + 3.0 * pos[:, 1]
+    assert jnp.allclose(results, expected, atol=1e-4)
+
+
+def test_tsc_force_newton_third_law():
+    """TSC solver satisfies Newton's 3rd law: total force on a periodic system is zero."""
+    from src.physics.system import PoissonVlasov
+    from src.physics.cosmology import EDS_PRESET
+    from src.solver.state import State
+
+    N = 16
+    box = Box(2, N, 20.0)
+    particle_mass = float(N ** 2) / 2.0
+    pos = jnp.array([[5.3, 7.1], [14.2, 11.8]], dtype=jnp.float64)
+    system = PoissonVlasov(box, EDS_PRESET, particle_mass=particle_mass, assignment="tsc")
+    s = State(jnp.array(1.0), pos, jnp.zeros_like(pos))
+    acc = system.momentumEquation(s)
+    total = acc[0] + acc[1]
+    assert jnp.allclose(total, 0.0, atol=1e-4), f"TSC force imbalance: {total}"
+
+
+def test_tsc_uniform_force_is_zero():
+    """TSC on a uniform particle grid: delta=0 → zero PM acceleration."""
+    from src.physics.system import PoissonVlasov
+    from src.physics.cosmology import EDS_PRESET
+    from src.solver.state import State
+
+    N = 8
+    force_box = Box(2, N, 10.0)
+    idx = jnp.arange(N)
+    gx, gy = jnp.meshgrid(idx, idx)
+    positions = (jnp.stack([gx.ravel(), gy.ravel()], axis=-1).astype(jnp.float64)
+                 * force_box.res)
+    system = PoissonVlasov(force_box, EDS_PRESET, particle_mass=1.0, assignment="tsc")
+    s = State(jnp.array(1.0), positions, jnp.zeros_like(positions))
+    acc = system.momentumEquation(s)
+    assert jnp.allclose(acc, 0.0, atol=1e-4)
 
 
 # ---------------------------------------------------------------------------

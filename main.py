@@ -9,7 +9,7 @@ import numpy as np
 
 from src.core.box import Box
 from src.core.filters import Power_law, Scale, Cutoff, Potential
-from src.core.ops import garfield, md_cic_nd
+from src.core.ops import garfield, md_cic_nd, md_tsc_nd
 from src.physics.cosmology import Cosmology
 from src.physics.system import PoissonVlasov
 from src.physics.initial_conds import Zeldovich
@@ -70,15 +70,17 @@ def run_simulation(config_path):
         momentum=state.momentum.astype(dtype),
     )
 
-    # 5. Setup system (solver selection)
+    # 5. Setup system (solver + mass-assignment selection)
     solver     = config.get('solver', 'pm')
+    assignment = config.get('assignment', 'cic')
     pp_window  = config.get('pp_window', 2)
     pp_soft    = config.get('pp_softening', 0.1)
     pp_cutoff  = config.get('pp_cutoff', 2.5)
     system = PoissonVlasov(force_box, cosmo, za.particle_mass,
-                           solver=solver, pp_window=pp_window,
+                           solver=solver, assignment=assignment,
+                           pp_window=pp_window,
                            pp_softening=pp_soft, pp_cutoff=pp_cutoff)
-    print(f"Solver: {solver.upper()}")
+    print(f"Solver: {solver.upper()}  Assignment: {assignment.upper()}")
 
     # 6. Setup integrator (fixed or adaptive)
     timestepping = config.get('timestepping', 'fixed')
@@ -141,16 +143,21 @@ def run_simulation(config_path):
         saved_pos.append(pos_np)
         saved_mom.append(mom_np)
 
-        # Density on mass grid for I/O
+        # Density on mass grid for I/O — use same scheme as force calculation
         x_grid = state.position / B_mass.res
-        rho = np.array(md_cic_nd(B_mass.shape, x_grid) + 1.0)
+        if assignment == "tsc":
+            rho = np.array(md_tsc_nd(B_mass.shape, x_grid) + 1.0)
+        else:
+            rho = np.array(md_cic_nd(B_mass.shape, x_grid) + 1.0)
 
         if config.get('save_vtk') and chunk_idx % vtk_freq == 0:
             write_vtk_particles(pos_np, mom_np, a_val, results_dir, config['name'])
             write_vtk_density(rho, B_mass, a_val, results_dir, config['name'])
 
         if config.get('save_power_spectrum'):
-            k, Pk = compute_power_spectrum(rho, B_mass.L, particle_count=len(pos_np))
+            k, Pk = compute_power_spectrum(rho, B_mass.L,
+                                           particle_count=len(pos_np),
+                                           assignment=assignment)
             append_to_csv(ps_csv_path, chunk_idx, a_val, k, Pk)
 
         # Adaptive: print current dt alongside progress

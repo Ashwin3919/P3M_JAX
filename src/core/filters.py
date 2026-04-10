@@ -88,3 +88,27 @@ class Potential(Filter):
     """Gravitational potential filter: -1/k²"""
     def __init__(self):
         Filter.__init__(self, lambda K: -_K_pow((K ** 2).sum(axis=0), -1.0))
+
+
+class TSCWindow(Filter):
+    """TSC (B₂-spline) Fourier-space window function: W(k) = ∏_d sinc³(k_d Δx / 2π).
+
+    Used to build the deconvolved Poisson kernel that corrects for the TSC
+    mass-assignment bias in both the deposition and interpolation steps:
+
+        kernel = (Potential() / TSCWindow(box) ** 2)(box.K)
+
+    Near-zero values at the Nyquist corner are clamped to 1 so that the
+    deconvolved kernel remains bounded (modes that small carry no signal).
+    """
+    def __init__(self, box):
+        dx = box.res
+
+        def f(K):
+            W = jnp.ones(K.shape[1:])
+            for k in K:   # iterate over spatial dimensions
+                W = W * jnp.sinc(k * dx / (2.0 * jnp.pi)) ** 3
+            # Guard: avoid dividing by near-zero window at the Nyquist corner
+            return jnp.where(W > 1e-4, W, 1.0)
+
+        Filter.__init__(self, f)

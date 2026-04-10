@@ -29,7 +29,7 @@ Phase 1 (dimension-agnostic infrastructure): DONE
 Phase 2 (ND CIC deposition and interpolation): DONE
 Phase 3 (Zeldovich ICs for 3D): DONE
 Phase 4 (PoissonVlasov 3D PM solver): DONE
-Phase 5 (TSC mass assignment + deconvolved Green's function): NOT DONE
+Phase 5 (TSC mass assignment + deconvolved Green's function): DONE
 Phase 6 (short-range PP forces via Morton Z-curve + sliding window): DONE
 Phase 7 (adaptive timestepping via lax.while_loop): DONE
 

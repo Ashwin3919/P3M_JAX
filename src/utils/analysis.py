@@ -18,10 +18,19 @@ def compute_power_spectrum(
     density: np.ndarray,
     box_size: float,
     n_bins: int = 30,
-    particle_count: int | None = None
+    particle_count: int | None = None,
+    assignment: str = "cic",
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Compute annularly- (2D) averaged power spectrum P(k).
+    """Compute annularly-averaged power spectrum P(k) with mass-assignment deconvolution.
+
+    Parameters
+    ----------
+    density        : ND density array (mean ≈ 1).
+    box_size       : physical box side length [Mpc/h].
+    n_bins         : number of logarithmic k bins.
+    particle_count : if given, subtract the 1/n̄ Poisson shot noise.
+    assignment     : 'cic' or 'tsc' — selects the window deconvolution.
+                     Must match the scheme used for mass deposition.
     """
     density = np.asarray(density, dtype=np.float64)
     N = density.shape[0]
@@ -40,15 +49,16 @@ def compute_power_spectrum(
 
     Pk2d = Pk2d.ravel()
 
-    # ---- CIC deconvolution ----
+    # ---- Mass-assignment window deconvolution ----
+    # CIC window per axis: sinc²(k Δx/2π)  → divide by ∏_d sinc²
+    # TSC window per axis: sinc³(k Δx/2π)  → divide by ∏_d sinc³
     dx = box_size / N
+    sinc_exp = 3 if assignment == "tsc" else 2
     W = np.ones_like(grids[0])
     for g in grids:
-        W *= np.sinc(g * dx / (2 * np.pi))
-    W = W**2
+        W *= np.sinc(g * dx / (2 * np.pi)) ** sinc_exp
     W = W.ravel()
 
-    # Correct for CIC
     Pk2d /= np.where(W > 1e-6, W, 1.0)
 
     # ---- Shot noise correction ----

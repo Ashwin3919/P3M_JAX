@@ -62,12 +62,22 @@ def iterate_step_scan(
     return jax.lax.scan(chunk_fn, init, xs=None, length=n_chunks)
 
 
-def step_chunk(system: HamiltonianSystem[jnp.ndarray], state: State, dt: float, save_every: int) -> State:
+def step_chunk(system: HamiltonianSystem[jnp.ndarray], state: State, dt: float,
+               save_every: int, *, checkpoint: bool = False) -> State:
     """Run exactly save_every leapfrog steps with fixed dt, return final state.
+
+    Parameters
+    ----------
+    checkpoint : bool
+        Apply jax.checkpoint to each scan step.  Halves peak memory at the cost
+        of recomputing each forward step during the backward pass (2x compute).
+        Required when differentiating through long rollouts.
 
     JIT-compile with partial(step_chunk, system, dt=dt, save_every=k).
     """
     step_fn = lambda s, x: leapfrog_step_scan(s, x, dt, system)
+    if checkpoint:
+        step_fn = jax.checkpoint(step_fn)
     final, _ = jax.lax.scan(step_fn, state, xs=None, length=save_every)
     return final
 

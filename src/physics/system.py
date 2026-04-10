@@ -2,21 +2,30 @@ import jax
 import jax.numpy as jnp
 import jax.scipy.special as jss
 from src.solver.state import State, HamiltonianSystem
-from src.core.ops import md_cic_nd, InterpND, gradient_2nd_order
-from src.core.filters import Potential
+from src.core.ops import md_cic_nd, md_tsc_nd, InterpND, InterpTSC, gradient_2nd_order
+from src.core.filters import Potential, TSCWindow
 
 
 class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
     def __init__(self, box, cosmology, particle_mass,
-                 solver="pm", pp_window=2, pp_softening=0.1, pp_cutoff=2.5):
+                 solver="pm", assignment="cic",
+                 pp_window=2, pp_softening=0.1, pp_cutoff=2.5):
         self.box = box
         self.cosmology = cosmology
         self.particle_mass = particle_mass
-        self.kernel = Potential()(self.box.K)
         self.solver = solver
+        self.assignment = assignment
         self.pp_window = pp_window
         self.pp_softening = pp_softening
         self.pp_cutoff = pp_cutoff
+
+        # Build the Poisson kernel: plain -1/k² for CIC, deconvolved for TSC.
+        # The TSC kernel divides out W_TSC(k)² = [∏_d sinc³(k_d Δx/2π)]² to correct
+        # for the bias introduced by both the deposition and interpolation steps.
+        if assignment == "tsc":
+            self.kernel = (Potential() / TSCWindow(box) ** 2)(self.box.K)
+        else:   # cic (default)
+            self.kernel = Potential()(self.box.K)
 
         if solver == "p3m":
             r_cut_phys = pp_cutoff * box.res
@@ -33,9 +42,15 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         return s.momentum / (s.time ** 2 * da)
 
     def _pm_force(self, x_grid, phi, da):
-        """PM long-range force: gradient of Poisson potential interpolated at particle positions."""
+        """PM long-range force: gradient of Poisson potential interpolated at particle positions.
+
+        Uses InterpTSC when assignment='tsc' (B₂-spline weights), InterpND (CIC)
+        otherwise.  The interpolation scheme must match the deposition scheme so
+        that the deposit–solve–interpolate pipeline is self-adjoint.
+        """
+        interp_cls = InterpTSC if self.assignment == "tsc" else InterpND
         acc_components = [
-            InterpND(gradient_2nd_order(phi, i))(x_grid)
+            interp_cls(gradient_2nd_order(phi, i))(x_grid)
             for i in range(self.box.dim)
         ]
         return jnp.stack(acc_components, axis=-1) / self.box.res
@@ -115,7 +130,11 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         da = self.cosmology.da(a)
         x_grid = s.position / self.box.res
 
-        delta = md_cic_nd(self.box.shape, x_grid) * self.particle_mass - 1.0
+        # Python-level branch: resolved at trace time, zero runtime cost.
+        if self.assignment == "tsc":
+            delta = md_tsc_nd(self.box.shape, x_grid) * self.particle_mass - 1.0
+        else:
+            delta = md_cic_nd(self.box.shape, x_grid) * self.particle_mass - 1.0
         phi   = jnp.fft.ifftn(jnp.fft.fftn(delta) * self.kernel).real * self.cosmology.G / a
 
         pm_acc = self._pm_force(x_grid, phi, da)
