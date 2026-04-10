@@ -698,7 +698,7 @@ Organised into seven test classes. Each test checks a specific physical property
 
 ## 17. Limitations and Future Work
 
-**TSC mass assignment (Phase 5):** The Triangular-Shaped Cloud scheme distributes mass over $3^d$ cells using a parabolic kernel, reducing aliasing relative to CIC. The corresponding deconvolved Green's function for the Fourier-space potential is not implemented.
+**TSC mass assignment (Phase 5):** Fully implemented. The Triangular-Shaped Cloud scheme distributes mass over $3^d$ cells using a quadratic B-spline kernel (`md_tsc_nd`), with a matching `InterpTSC` interpolator so that the deposit–solve–interpolate pipeline is self-adjoint. The corresponding deconvolved Green's function (`Potential() / TSCWindow(box)**2`) is precomputed at initialisation and used throughout the force pipeline when `"assignment": "tsc"` is set. The power-spectrum deconvolution in `compute_power_spectrum` likewise applies the cubic sinc³ window correction for TSC.
 
 **Zeldovich momentum for LCDM:** The initial momentum is set as $\mathbf{p} = a_\text{init} \cdot \mathbf{u}$, which is exact for EdS ($D(a) = a$, growth rate $f = 1$) but omits the $f(a) \cdot H(a) \cdot D(a)$ prefactor for LCDM cosmologies. This introduces a small error in initial particle velocities for `high_res.json` and `3d_heigh_res.json`; particle positions at $a_\text{start}$ are unaffected.
 

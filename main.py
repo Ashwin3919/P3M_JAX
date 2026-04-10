@@ -60,7 +60,7 @@ def run_simulation(config_path):
 
     # 4. Generate Initial Conditions
     print("Generating initial conditions...")
-    Power_spectrum = (Power_law(config['power_index']) * Scale(B_mass, 0.2) * Cutoff(B_mass))
+    Power_spectrum = (Power_law(config['power_index']) * Scale(B_mass, 0.2) * Cutoff(B_mass))  # sigma=0.2 Mpc/h: sub-grid Gaussian smoothing to suppress aliasing at the Nyquist scale
     phi = (garfield(B_mass, Power_spectrum, Potential(), config['seed']) * config['A']).astype(dtype)
 
     za = Zeldovich(B_mass, force_box, cosmo, phi)

@@ -108,6 +108,8 @@ class CICWindow(Filter):
             W = jnp.ones(K.shape[1:])
             for k in K:   # iterate over spatial dimensions
                 W = W * jnp.sinc(k * dx / (2.0 * jnp.pi)) ** 2
+            # 1e-4 threshold: more aggressive than the 1e-6 used in power-spectrum
+            # post-processing because errors here amplify force noise every step.
             return jnp.where(W > 1e-4, W, 1.0)
 
         Filter.__init__(self, f)
@@ -131,7 +133,7 @@ class TSCWindow(Filter):
             W = jnp.ones(K.shape[1:])
             for k in K:   # iterate over spatial dimensions
                 W = W * jnp.sinc(k * dx / (2.0 * jnp.pi)) ** 3
-            # Guard: avoid dividing by near-zero window at the Nyquist corner
+            # 1e-4: same threshold as CICWindow — see rationale there.
             return jnp.where(W > 1e-4, W, 1.0)
 
         Filter.__init__(self, f)

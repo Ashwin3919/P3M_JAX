@@ -59,7 +59,7 @@ def compute_power_spectrum(
         W *= np.sinc(g * dx / (2 * np.pi)) ** sinc_exp
     W = W.ravel()
 
-    Pk2d /= np.where(W > 1e-6, W, 1.0)
+    Pk2d /= np.where(W > 1e-6, W, 1.0)  # 1e-6 (vs 1e-4 in force kernel): post-hoc deconvolution recovers more Nyquist modes safely since P(k) errors here are diagnostic, not fed back into dynamics
 
     # ---- Shot noise correction ----
     if particle_count is not None:

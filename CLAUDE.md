@@ -62,7 +62,7 @@ Config JSON → Cosmology + Box setup → Zeldovich ICs → PoissonVlasov system
 | `src/core/box.py` | `Box` class: periodic domain, FFT wavenumber grids (`K`, `k`), Nyquist/min freq, grid resolution |
 | `src/core/ops.py` | ND CIC deposition `md_cic_nd()` (alias: `md_cic_2d`), ND TSC deposition `md_tsc_nd()`, ND interpolation `InterpND`/`InterpTSC` (CIC alias: `Interp2D`), 4th-order finite-difference gradient `gradient_4th_order()` (alias: `gradient_2nd_order`), Gaussian random field `garfield()` |
 | `src/core/filters.py` | Composable Fourier-space filters: `Power_law`, `Scale`, `Cutoff`, `Potential` (-1/k²), `CICWindow`, `TSCWindow`, `Identity`, `Zero`. Operator overloading: `*` (product), `+` (sum), `**` (power), `~` (conjugate), `/` (ratio). Inner product `cc()` and cross-product `cf()` methods. |
-| `src/physics/cosmology.py` | `Cosmology` dataclass: `da(a)` = aḢ(a), `G` = (3/2)ΩM H0², `growing_mode(a)` (diagnostic only, not called by solver). Presets: `LCDM_PRESET` (Planck 2018: H0=68, ΩM=0.31, ΩL=0.69), `EDS_PRESET` (H0=70, ΩM=1, ΩL=0) |
+| `src/physics/cosmology.py` | `Cosmology` dataclass: `da(a)` = aḢ(a), `G` = (3/2)ΩM H0², `growing_mode(a)` (Heath 1977 integral; called by `Zeldovich.__call__` to compute the LCDM/EdS growth-factor ratio `D_cosmo/D_EdS` that corrects initial positions and momenta), `growth_rate(a)` (Linder 2005). Presets: `LCDM_PRESET` (Planck 2018: H0=68, ΩM=0.31, ΩL=0.69), `EDS_PRESET` (H0=70, ΩM=1, ΩL=0) |
 | `src/physics/system.py` | `PoissonVlasov`: PM force (`_pm_force`), PP correction (`_pp_force`), Morton encoding (`_morton_encode`). `solver='pm'` uses PM only; `solver='p3m'` adds PP short-range correction. |
 | `src/physics/initial_conds.py` | `Zeldovich`: Gaussian random potential → displacement field `u` → initial positions/momenta. `particle_mass` property returns `(N_force/N_mass)^dim`. |
 | `src/solver/state.py` | `State(NamedTuple)`: `(time, position, momentum)`. `HamiltonianSystem` ABC with `positionEquation` / `momentumEquation`. |
@@ -201,11 +201,11 @@ Set via `"precision"` in the config. Affects particle positions, momenta, densit
 
 ### Known Limitations
 
-- **TSC mass assignment (Phase 5)**: Not implemented. CIC is used throughout.
+- **TSC mass assignment (Phase 5)**: Fully implemented. `md_tsc_nd`, `InterpTSC`, `TSCWindow`, and the deconvolved Green's function kernel are all active when `"assignment": "tsc"` is set in the config. Both CIC and TSC are supported throughout the force pipeline.
 - **Zeldovich momentum for LCDM**: `P = a_start × u` is exact for EdS but omits the `f(a)·H(a)·D(a)` prefactor for LCDM. Small error in initial velocities only; positions at `a_start` are unaffected.
 - **PP force-split accuracy**: The erfc splitting kernel is applied but the PM force contribution at short separations is not analytically subtracted. Equivalent to assuming PM force is negligible below `r_cut` — holds when `r_cut ≪ Δx_force`.
 - **Large-N PP scaling**: The Morton sliding window is O(Nₚ·W). Spatial hashing would give O(Nₚ) average-case lookup but requires variable-length neighbour lists incompatible with XLA's static-shape model. Fixed-width padding would be needed, partially negating the advantage.
-- **`growing_mode` not used by solver**: `Cosmology.growing_mode(a)` is a diagnostic only (uses scipy quadrature). The simulation never calls it.
+- **`growing_mode` uses scipy quadrature**: Called once at IC generation time (not inside the JAX time-integration loop) to compute `D_cosmo / D_EdS`, the growth-factor ratio that corrects initial positions and momenta for LCDM. For EdS cosmology the ratio is exactly 1 so this path is trivially fast.
 
 ### Adding a New Config
 

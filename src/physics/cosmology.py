@@ -31,8 +31,10 @@ class Cosmology:
         at a→0.  The additive 1e-5 term approximates D(eps)≈eps for early-matter
         domination, but introduces a small (H0-dependent) offset at a < 0.1.
 
-        Called by Zeldovich ICs via growing_mode_normalized to correct LCDM
-        initial momenta. Use growing_mode_normalized for a dimensionless D(a).
+        Called by `Zeldovich.__call__` to compute the dimensionless ratio
+        D_cosmo(a) / D_EdS(a), which corrects initial positions and momenta
+        for LCDM cosmologies. The H0-dependent normalisation cancels in the
+        ratio, so the absolute value of D(a) is not meaningful on its own.
         """
         if isinstance(a, jnp.ndarray):
             return jnp.array([self.growing_mode(float(b)) for b in a])

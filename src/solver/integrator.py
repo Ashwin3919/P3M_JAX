@@ -99,7 +99,7 @@ def compute_dt(state: State, cosmology, C_cfl: float, eps: float,
     # is ~H0*a^(1/2)*a^2 ≈ 70*0.14*0.0004 ≈ 0.004, so the guard never activates.
     v_mag = jnp.linalg.norm(state.momentum, axis=-1) / (a ** 2 * da + 1e-20)
     v_max = jnp.max(v_mag)
-    dt = C_cfl * eps / (v_max + 1e-10)
+    dt = C_cfl * eps / (v_max + 1e-10)   # 1e-10 guards against v_max=0 at t=0
     return jnp.clip(dt, dt_min, dt_max)
 
 
