@@ -857,9 +857,26 @@ Assertion passed.
 
 ![Matter power spectrum evolution — 3D LCDM run, N=144, L=100 Mpc/h](op/3d_visual/power_spectrum.png)
 
-**Figure:** Matter power spectrum $P(k)$ at six checkpoints from a 3D LCDM simulation ($H_0 = 70$ km/s/Mpc, $\Omega_M = 0.6$, $\Omega_\Lambda = 0.4$, $N = 144^3 \approx 3 \times 10^6$ particles, $L = 100$ Mpc/h, float32, adaptive timestepping with $\Delta a \in [0.0005, 0.02]$). The colourbar encodes scale factor $a$, running from early times (dark blue, $a \approx 0.3$) to $a = 1.32$ (yellow). Each curve is computed from `src/utils/analysis.py:compute_power_spectrum` with CIC window deconvolution and Poisson shot noise subtraction applied.
+**Figure:** Matter power spectrum $P(k)$ at six checkpoints from a 3D ΛCDM simulation ($H_0 = 70$ km/s/Mpc,
+$\Omega_M = 0.6$, $\Omega_\Lambda = 0.4$ — note: matter-dominated relative to standard Planck-2018 cosmology,
+with matter–Λ equality at $a_\text{eq} \approx 1.14$; $N = 144^3 \approx 3 \times 10^6$ particles,
+$L = 100$ Mpc/h, float32, adaptive timestepping with $\Delta a \in [0.0005, 0.02]$).
+The colourbar encodes scale factor $a$, running from early times (dark blue, $a = 0.237$) to $a = 1.32$ (yellow).
+Each curve is computed from `src/utils/analysis.py:compute_power_spectrum` with CIC window deconvolution
+and Poisson shot noise subtraction applied.
 
-At large scales ($k \lesssim 0.3\; h/\text{Mpc}$), the amplitude grows monotonically with $a$, consistent with linear theory $P(k,a) \propto D^2(a)$. At small scales ($k \gtrsim 1\; h/\text{Mpc}$), gravitational collapse drives power significantly above the linear prediction — the onset of non-linear structure formation. The turnover and suppression at the highest $k$ modes reflects the finite force resolution of the dual-resolution grid ($\Delta x_f = L/(2N) \approx 0.35$ Mpc/h).
+At large scales ($k \lesssim 0.3\; h/\text{Mpc}$), the amplitude grows monotonically with $a$, consistent
+with linear theory $P(k,a) \propto D^2(a)$. The growth ratio $P(k,\, a=1.32)/P(k,\, a=0.237) \approx 22$
+at these scales is sub-EdS (vs. $(a_\text{max}/a_\text{min})^2 \approx 31$), reflecting the onset of dark
+energy suppression near $a_\text{eq} \approx 1.14$. Mild excess power around
+$k \sim 0.15$–$0.35\; h/\text{Mpc}$ traces BAO-scale features in the initial conditions.
+At intermediate scales ($1 \lesssim k \lesssim 3\; h/\text{Mpc}$), the growth ratio drops below the
+large-scale reference, indicating this regime remains in the quasi-linear or CIC-smoothed regime at the
+simulation's resolution. Clear non-linear enhancement — growth ratio significantly exceeding the large-scale
+linear value — is only observed at $k \gtrsim 4\; h/\text{Mpc}$, signalling the onset of resolved
+non-linear structure formation. The turnover and sharp suppression at the highest $k$ modes reflects the
+finite force resolution of the dual-resolution grid
+($\Delta x_f = L/(2N) = 100/288 \approx 0.35$ Mpc/h).
 
 ---
 
