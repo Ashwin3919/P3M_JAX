@@ -6,18 +6,23 @@ from src.solver.state import State, Vector, HamiltonianSystem
 
 def leap_frog(dt: float, h: HamiltonianSystem[jnp.ndarray], s: State) -> State:
     """KDK Leap-frog integration step (immutable State)."""
+    dtype = s.position.dtype
+    dt = jnp.array(dt, dtype=dtype)
+
     # 1. Half-step Kick
-    momentum_half = s.momentum + (dt / 2) * h.momentumEquation(s)
-    s_half_kicked = State(s.time, s.position, momentum_half)
+    momentum_half = (s.momentum + (dt / 2) * h.momentumEquation(s)).astype(dtype)
+    # Advance time to the midpoint so positionEquation evaluates 1/(a+dt/2)² H(a+dt/2),
+    # centering the drift coefficient and keeping the integrator time-symmetric.
+    s_half_kicked = State(jnp.array(s.time + dt / 2, dtype=dtype), s.position, momentum_half)
 
     # 2. Full-step Drift
-    new_position = s_half_kicked.position + dt * h.positionEquation(s_half_kicked)
-    s_drifted = State(s.time + dt, new_position, momentum_half)
+    new_position = (s_half_kicked.position + dt * h.positionEquation(s_half_kicked)).astype(dtype)
+    s_drifted = State(jnp.array(s.time + dt, dtype=dtype), new_position, momentum_half)
 
     # 3. Half-step Kick
-    new_momentum = s_drifted.momentum + (dt / 2) * h.momentumEquation(s_drifted)
+    new_momentum = (s_drifted.momentum + (dt / 2) * h.momentumEquation(s_drifted)).astype(dtype)
 
-    return State(s.time + dt, new_position, new_momentum)
+    return State(s_drifted.time, new_position, new_momentum)
 
 
 def leapfrog_step_scan(state: State, _, dt: float, system: HamiltonianSystem[jnp.ndarray]) -> Tuple[State, State]:

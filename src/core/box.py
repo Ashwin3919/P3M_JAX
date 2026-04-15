@@ -17,9 +17,10 @@ def _wave_number(s):
     -------
     Array of shape (dim, *s) with integer wave-number indices.
     """
-    N = s[0]
     i = jnp.indices(s)
-    return jnp.where(i > N / 2, i - N, i)
+    # Each axis has its own Nyquist: reshape N_d so it broadcasts against (dim, *s).
+    N = jnp.array(s).reshape((-1,) + (1,) * len(s))
+    return jnp.where(i > N // 2, i - N, i)
 
 class Box:
     """Simulation box with periodic boundary conditions.

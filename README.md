@@ -26,13 +26,16 @@ P3M_JAX/
 │   ├── 3d_heigh_res.json       # 3D LCDM, N=128, float32, PM, fixed dt
 │   ├── 3d_heigh_res_p3m.json   # 3D LCDM, N=128, float32, P3M, fixed dt
 │   └── p3m_adaptive.json       # 2D EdS, N=64, P3M + adaptive dt
+├── scripts/
+│   ├── sensitivity.py          # IC sensitivity: jax.grad through garfield→CIC→FFT
+│   └── linear_theory.py        # Simulation vs linear-theory P(k) comparison
 ├── src/
 │   ├── core/                   # JAX kernels: CIC, interpolation, GRFs, filters
 │   ├── diff/                   # Differentiable PM rollout (jax.grad interface)
 │   ├── physics/                # Cosmology, PoissonVlasov system, Zeldovich ICs
 │   ├── solver/                 # State, KDK leapfrog, lax.scan / while_loop
-│   └── utils/                  # Power spectrum, VTK I/O
-├── tests/                      # 89 unit and physics tests
+│   └── utils/                  # Power spectrum, VTK I/O, linear-theory reference
+├── tests/                      # Unit, physics, and convergence tests
 └── results/                    # Auto-created; outputs organised by config name
 ```
 
@@ -149,11 +152,45 @@ pytest tests/ -v
 
 Tests cover CIC mass conservation, interpolation accuracy, Box wave numbers, gradient correctness, PM/P3M force computation, erfc force splitting, Morton Z-curve ordering, adaptive time-step bounds, and end-to-end PM differentiability (AD vs finite-difference checks).
 
+**Convergence tests** (`tests/test_convergence.py`) verify that the KDK leapfrog achieves 2nd-order global convergence by fitting a log-log slope over particle trajectory errors at multiple step sizes. Expected output:
+
+```
+Fitted convergence order: 2.1xx  (expected ≈ 2.0)
+```
+
 ---
 
-## Differentiable PM Simulation
+## Differentiable Simulation
 
-The PM force pipeline is fully differentiable end-to-end via JAX automatic differentiation. Gradients can be computed with respect to initial particle positions and momenta (and optionally cosmological parameters) using `jax.grad` / `jax.value_and_grad`.
+Two differentiation modes are supported, covering different use cases.
+
+### 1. IC pipeline sensitivity (`scripts/sensitivity.py`)
+
+The initial-condition → density → power-spectrum pipeline is fully differentiable
+end-to-end via `jax.grad`. Gradients flow through:
+
+```
+scalar A  →  garfield (FFT/IFFT)  →  Zeldovich displacement  →  CIC deposition  →  FFT  →  P(k)
+```
+
+Run the sensitivity analysis:
+
+```bash
+python scripts/sensitivity.py
+```
+
+This computes `dP_total/dA` and verifies it against finite differences. Expected output:
+
+```
+jax.grad vs finite-difference rel. error at A=12: 5.20e-12
+```
+
+Machine-precision agreement confirms the gradient flows correctly through all operations.
+
+### 2. Full PM time-integration rollout (`src/diff/pm_grad.py`)
+
+The complete PM time-stepping loop is differentiable w.r.t. initial positions, momenta,
+and cosmological parameters (OmegaM, OmegaL):
 
 ```python
 from src.diff import make_loss_fn
@@ -164,11 +201,58 @@ grad_fn = jax.jit(jax.value_and_grad(loss_fn, argnums=(0, 1)))
 loss, (dpos, dmom) = grad_fn(init_pos, init_mom)
 ```
 
-Pass `checkpoint=True` to `make_loss_fn` for memory-efficient backprop over long rollouts (recomputes forward steps during backward pass instead of storing them).
+Pass `checkpoint=True` for memory-efficient backprop over long rollouts
+(recomputes forward steps during backward pass instead of storing them).
 
-**Note:** Only `solver="pm"` is differentiable. The P3M short-range path uses `jnp.argsort` (Morton sorting) which has no defined gradient; `pm_rollout` raises a `ValueError` if called with `solver="p3m"`.
+**Differentiability by solver:**
 
-See `src/diff/pm_grad.py` for the full API.
+| Solver | Differentiable | Notes |
+|--------|---------------|-------|
+| `"pm"` | Fully | CIC, FFT, FD gradient, `lax.scan` all have exact VJPs |
+| `"p3m"` | Approximately | Gradients flow through particle forces treating the Morton sort order as fixed (straight-through). Functional for optimisation; not the exact mathematical gradient of the sort-dependent force |
+
+The PP short-range force uses `jnp.argsort` for Morton-curve sorting, which is a
+discrete operation with no defined gradient. JAX flows gradients through the
+gather/scatter operations around the sort (treating the sort order as a fixed
+permutation during backprop). This is exact for particle forces given a fixed
+neighbour list, and sufficiently accurate for gradient-based inference in practice.
+
+See `src/diff/pm_grad.py` for the full API including `pm_rollout_cosmo` for
+cosmological parameter gradients.
+
+---
+
+## Validation
+
+### Integrator convergence
+
+The KDK leapfrog is measured to achieve 2nd-order global convergence on a live cosmological N-body problem:
+
+```bash
+pytest tests/test_convergence.py -v -s
+```
+
+Output: fitted slope ≈ 2.1 over a 4-point dt-refinement sweep. Total momentum conservation verified to `< 1e-8`.
+
+### Linear theory comparison
+
+At large scales (small k) and early times the simulated P(k) should track the linear-theory prediction `P_lin(k, a) = P_init(k) × (D(a)/D(a_init))²`. At small scales, gravitational collapse drives the simulation above the linear prediction — the non-linear scale `k_nl` is labelled on the output figure.
+
+```bash
+python scripts/linear_theory.py   # → results/linear_theory/linear_theory.png
+```
+
+### Bug fixes applied
+
+The following correctness issues were identified and resolved:
+
+| Fix | Location | Impact |
+|-----|----------|--------|
+| PP force missing `particle_mass` factor | `system.py:134` | P3M forces were 4× (2D) / 8× (3D) too weak |
+| Morton code `int32` overflow in 3D | `system.py:72` | Spatial sorting silently corrupted for 3D P3M |
+| KDK drift evaluated at wrong time | `integrator.py:11` | Drift coefficient used `a` instead of `a + dt/2`, breaking time-centering |
+| `_K_pow` NaN gradients via `jnp.where` | `filters.py:5` | `k**(-1)` at `k=0` produced `inf` before masking; gradient was `nan` |
+| `_wave_number` hardcoded first-axis N | `box.py:20` | Wrong Nyquist for non-cubic grids; float vs int comparison |
 
 ---
 

@@ -1,4 +1,4 @@
-# CLAUDE.md
+# GEMINI.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -21,15 +21,6 @@ pytest tests/
 
 # Run a single test
 pytest tests/test_core.py::test_md_cic_2d_mass_conservation
-
-# Convergence tests (measures KDK integrator order, expects slope ≈ 2)
-pytest tests/test_convergence.py -v -s
-
-# Differentiability demo: jax.grad through IC pipeline → P(k)
-python scripts/sensitivity.py        # → results/sensitivity/sensitivity.png
-
-# Linear theory comparison: simulation P(k) vs P_lin(k,a) = P_init × (D(a)/D_init)²
-python scripts/linear_theory.py      # → results/linear_theory/linear_theory.png
 ```
 
 ## Generalisation Roadmap — Status
@@ -41,9 +32,6 @@ Phase 4 (PoissonVlasov 3D PM solver): DONE
 Phase 5 (TSC mass assignment + deconvolved Green's function): DONE
 Phase 6 (short-range PP forces via Morton Z-curve + sliding window): DONE
 Phase 7 (adaptive timestepping via lax.while_loop): DONE
-Phase 8 (bug fixes + numerical validation): DONE
-  - PP force particle_mass factor, Morton int64, KDK drift midpoint, _K_pow NaN gradient, wave-number per-axis Nyquist
-  - Convergence tests (2nd-order verified), linear theory comparison, IC sensitivity via jax.grad
 
 ## Architecture
 
@@ -79,7 +67,7 @@ Config JSON → Cosmology + Box setup → Zeldovich ICs → PoissonVlasov system
 | `src/physics/initial_conds.py` | `Zeldovich`: Gaussian random potential → displacement field `u` → initial positions/momenta. `particle_mass` property returns `(N_force/N_mass)^dim`. |
 | `src/solver/state.py` | `State(NamedTuple)`: `(time, position, momentum)`. `HamiltonianSystem` ABC with `positionEquation` / `momentumEquation`. |
 | `src/solver/integrator.py` | KDK leap-frog `leap_frog()` (single step). `iterate_step_scan()` (full scan). `step_chunk()` (fixed dt, JIT target). `step_chunk_adaptive()` (CFL dt, lax.while_loop). `compute_dt()` (CFL estimate). |
-| `src/utils/analysis.py` | `compute_power_spectrum()` with CIC deconvolution and shot noise subtraction. `linear_theory_pk()` — scales an initial P(k) to a target scale factor using D(a)/D(a_init). `append_to_csv()`. `plot_power_spectrum_evolution()`. |
+| `src/utils/analysis.py` | `compute_power_spectrum()` with CIC deconvolution and shot noise subtraction. `append_to_csv()`. `plot_power_spectrum_evolution()`. |
 | `src/utils/io.py` | `write_vtk_particles()` (binary Legacy VTK PolyData, float32 big-endian). `write_vtk_density()` (ASCII VTK StructuredPoints, Fortran ordering). 2D positions padded to (N,3) with z=0. |
 | `src/utils/config_parser.py` | `load_config()`: JSON load + required-key validation + physical-range checks. `get_results_dir()`. |
 | `src/utils/plotting.py` | `plot_density_evolution()`, `plot_particles()` — end-of-run matplotlib figures. |

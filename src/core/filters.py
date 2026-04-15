@@ -3,8 +3,15 @@ from functools import reduce
 from numbers import Number
 
 def _K_pow(k, n):
-    """Raise |k| to the n-th power safely"""
-    return jnp.where(k == 0, 0.0, k ** n)
+    """Raise |k| to the n-th power safely.
+
+    Avoids NaN gradients from jnp.where: XLA evaluates both branches before
+    selecting, so k**n at k=0 with n<0 produces inf, and its gradient is nan
+    even on the masked branch.  Replacing the zero-k entry with 1.0 before
+    raising keeps all arithmetic finite; the zero mask is applied afterwards.
+    """
+    safe_k = jnp.where(k == 0, 1.0, k)
+    return jnp.where(k == 0, 0.0, safe_k ** n)
 
 class Filter:
     """Base class for Fourier space filters"""

@@ -47,7 +47,7 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
     def positionEquation(self, s: State[jnp.ndarray]) -> jnp.ndarray:
         a = s.time
         da = self.cosmology.da(a)
-        return s.momentum / (s.time ** 2 * da)
+        return (s.momentum / (s.time ** 2 * da)).astype(s.position.dtype)
 
     def _pm_force(self, x_grid, phi, da):
         """PM long-range force: gradient of Poisson potential interpolated at particle positions.
@@ -69,8 +69,8 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         Loops run at trace time — XLA sees a fixed sequence of bitwise ops.
         Clips to [0, box.N - 1] before encoding; works for both 2D and 3D.
         """
-        coords = jnp.floor(x_grid).astype(jnp.int32).clip(0, self.box.N - 1)
-        code = jnp.zeros(coords.shape[0], dtype=jnp.int32)
+        coords = jnp.floor(x_grid).astype(jnp.int64).clip(0, self.box.N - 1)
+        code = jnp.zeros(coords.shape[0], dtype=jnp.int64)
         for bit in range(16):          # 16 bits per coordinate → up to 65536 grid points
             for d in range(self.box.dim):
                 code = code | (((coords[:, d] >> bit) & 1) << (bit * self.box.dim + d))
@@ -130,8 +130,10 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
             # Prevent 0 division in masked elements
             safe_r_soft3 = jnp.where(valid, r_soft3, 1.0)
 
-            # F = G/a · erfc(r/alpha) / |r_soft|^3 · r_vec   (same units as PM acc)
-            G_eff = self.cosmology.G / a
+            # F = G/a · m · erfc(r/alpha) / |r_soft|^3 · r_vec   (same units as PM acc)
+            # particle_mass brings PP and PM forces onto the same scale:
+            # PM includes mass via delta = rho * particle_mass - 1; PP must do so explicitly.
+            G_eff = self.cosmology.G * self.particle_mass / a
             f = G_eff * jnp.sum(
                 valid[:, None] * erfc_w[:, None] * r_vec / safe_r_soft3[:, None], axis=0
             )   # (dim,)
@@ -157,5 +159,5 @@ class PoissonVlasov(HamiltonianSystem[jnp.ndarray]):
         # Python-level branch: resolved at trace time, zero runtime cost
         if self.solver == "p3m":
             pp_acc = self._pp_force(s.position, a, da)
-            return -(pm_acc + pp_acc) / da
-        return -pm_acc / da
+            return (-(pm_acc + pp_acc) / da).astype(s.position.dtype)
+        return (-pm_acc / da).astype(s.position.dtype)

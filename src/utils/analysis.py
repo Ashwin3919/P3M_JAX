@@ -91,6 +91,39 @@ def compute_power_spectrum(
     return k_out[valid], Pk_out[valid]
 
 # ---------------------------------------------------------------------------
+# Linear-theory reference spectrum
+# ---------------------------------------------------------------------------
+
+def linear_theory_pk(k, Pk_init, a_init, a, cosmology=None):
+    """Scale an initial power spectrum to scale factor `a` using linear theory.
+
+    In linear perturbation theory P(k, a) = P(k, a_init) × [D(a)/D(a_init)]².
+    For an Einstein–de Sitter (EdS) cosmology D(a) = a, so the ratio simplifies
+    to (a / a_init)².  For LCDM the full growth factor D(a) is used when a
+    `cosmology` object is supplied.
+
+    Parameters
+    ----------
+    k         : array of wavenumbers [h/Mpc]
+    Pk_init   : P(k) at the initial snapshot
+    a_init    : scale factor of the initial snapshot
+    a         : target scale factor
+    cosmology : Cosmology instance (optional).  If None, EdS D(a) ∝ a is used.
+
+    Returns
+    -------
+    Pk_lin : linear-theory P(k) at scale factor `a`
+    """
+    if cosmology is None:
+        growth_ratio = a / a_init          # EdS: D ∝ a
+    else:
+        D_a    = float(cosmology.growing_mode(a))
+        D_init = float(cosmology.growing_mode(a_init))
+        growth_ratio = D_a / D_init
+    return Pk_init * growth_ratio ** 2
+
+
+# ---------------------------------------------------------------------------
 # CSV I/O
 # ---------------------------------------------------------------------------
 

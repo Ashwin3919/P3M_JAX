@@ -45,7 +45,9 @@ def run_simulation(config_path):
     if precision_str not in _DTYPE_MAP:
         raise ValueError(f"precision must be one of {list(_DTYPE_MAP)}, got '{precision_str}'")
     dtype = _DTYPE_MAP[precision_str]
-    if precision_str == 'float64':
+    # Enable 64-bit for float64 precision, and also whenever P3M is used since
+    # Morton Z-curve codes require int64 to avoid overflow in 3D (bit shifts up to 47).
+    if precision_str == 'float64' or config.get('solver', 'pm') == 'p3m':
         jax.config.update("jax_enable_x64", True)
     if precision_str == 'float16':
         print("WARNING: float16 precision is numerically unstable for N-body simulations. Use float32 or float64.")
@@ -75,6 +77,7 @@ def run_simulation(config_path):
     za = Zeldovich(B_mass, force_box, cosmo, phi)
     state = za.state(config['a_start'])
     state = state._replace(
+        time=jnp.array(state.time, dtype=dtype),
         position=state.position.astype(dtype),
         momentum=state.momentum.astype(dtype),
     )
@@ -98,9 +101,9 @@ def run_simulation(config_path):
 
     if timestepping == 'adaptive':
         C_cfl   = config.get('C_cfl', 0.3)
-        dt_min  = config.get('dt_min', 0.001)
-        dt_max  = config.get('dt_max', 0.05)
-        eps     = pp_soft   # use PP softening as the resolution scale for CFL
+        dt_min  = jnp.array(config.get('dt_min', 0.001), dtype=dtype)
+        dt_max  = jnp.array(config.get('dt_max', 0.05), dtype=dtype)
+        eps     = jnp.array(pp_soft, dtype=dtype)   # use PP softening as the resolution scale for CFL
         n_chunks = config.get('n_chunks', 50)   # number of output checkpoints
         chunk_da = (config['a_end'] - config['a_start']) / n_chunks
 
@@ -112,15 +115,15 @@ def run_simulation(config_path):
               f"n_chunks={n_chunks}")
 
     else:   # fixed dt
-        dt = config['dt']
+        dt = jnp.array(config['dt'], dtype=dtype)
         # Use round() to avoid float-division truncation (e.g. 0.98/0.02 → 48 not 49)
-        n_steps_raw = round((config['a_end'] - config['a_start']) / dt)
+        n_steps_raw = round((config['a_end'] - config['a_start']) / config['dt'])
         n_steps  = (n_steps_raw // save_every) * save_every
         n_chunks = n_steps // save_every
-        chunk_da = save_every * dt
+        chunk_da = save_every * config['dt']
 
         chunk_fn = jax.jit(partial(step_chunk, system, dt=dt, save_every=save_every))
-        print(f"Timestepping: FIXED  dt={dt}  steps={n_steps}  chunks={n_chunks}")
+        print(f"Timestepping: FIXED  dt={config['dt']}  steps={n_steps}  chunks={n_chunks}")
 
     # 7. Run simulation — save VTK + CSV after every chunk
     ps_csv_path = os.path.join(results_dir, "power_spectrum.csv")
