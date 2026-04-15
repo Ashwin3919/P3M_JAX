@@ -8,7 +8,7 @@ Runs without modification on CPU, NVIDIA GPU, and Apple Silicon.
 
 ![3D Visual Run (N=144)](op/144_title.png)
 
-Reference config: `configs/3d_visual.json`.
+Reference config: `configs/par_files/3d_visual.json`.
 Model used: flat LambdaCDM-like cosmology with `H0 = 70.0`, `OmegaM = 0.6`, `OmegaL = 0.4` (matter-rich expansion history).
 
 
@@ -21,11 +21,17 @@ P3M_JAX/
 ├── main.py                     # Entry point
 ├── configs/                    # JSON simulation configs
 │   ├── default.json            # 2D EdS, N=128, float64, PM, fixed dt
-│   ├── high_res.json           # 2D LCDM, N=256, float32, PM, fixed dt
-│   ├── 3d_default.json         # 3D EdS, N=64, float32, PM, fixed dt
-│   ├── 3d_heigh_res.json       # 3D LCDM, N=128, float32, PM, fixed dt
-│   ├── 3d_heigh_res_p3m.json   # 3D LCDM, N=128, float32, P3M, fixed dt
-│   └── p3m_adaptive.json       # 2D EdS, N=64, P3M + adaptive dt
+│   ├── default_p3m.json        # 2D EdS, N=128, float32, P3M, fixed dt
+│   ├── 3d_default.json         # 3D EdS, N=64, float64, PM, fixed dt
+│   ├── 3d_default_p3m.json     # 3D EdS, N=64, float32, P3M, fixed dt
+│   ├── 3d_256.json             # 3D LCDM, N=144, float32, PM, fixed dt
+│   ├── p3m_adaptive.json       # 2D EdS, N=64, PM, adaptive dt
+│   └── par_files/              # Higher-resolution and specialised configs
+│       ├── high_res.json       # 2D LCDM, N=1024, float32, PM, fixed dt
+│       ├── 3d_heigh_res.json   # 3D LCDM, N=128, float32, PM, fixed dt
+│       ├── 3d_heigh_res_p3m.json # 3D LCDM, N=128, float32, P3M, fixed dt
+│       ├── 3d_visual.json      # 3D LCDM, N=144, float32, PM, adaptive dt
+│       └── p3m_diff.json       # 2D EdS, N=16, float64, P3M, fixed dt
 ├── scripts/
 │   ├── sensitivity.py          # IC sensitivity: jax.grad through garfield→CIC→FFT
 │   └── linear_theory.py        # Simulation vs linear-theory P(k) comparison
@@ -65,12 +71,17 @@ python main.py --config configs/default.json
 
 | Config | dim | N | Solver | Stepping | Precision |
 |--------|-----|---|--------|----------|-----------|
-| `default.json` | 2 | 128 | PM | fixed dt=0.02 | float64 |
-| `high_res.json` | 2 | 256 | PM | fixed dt=0.015 | float32 |
-| `3d_default.json` | 3 | 64 | PM | fixed dt=0.02 | float32 |
-| `3d_heigh_res.json` | 3 | 128 | PM | fixed dt=0.02 | float32 |
-| `3d_heigh_res_p3m.json` | 3 | 128 | P3M | fixed dt=0.02 | float32 |
-| `p3m_adaptive.json` | 2 | 64 | P3M | adaptive (CFL) | float64 |
+| `configs/default.json` | 2 | 128 | PM | fixed dt=0.02 | float64 |
+| `configs/default_p3m.json` | 2 | 128 | P3M | fixed dt=0.02 | float32 |
+| `configs/3d_default.json` | 3 | 64 | PM | fixed dt=0.02 | float64 |
+| `configs/3d_default_p3m.json` | 3 | 64 | P3M | fixed dt=0.02 | float32 |
+| `configs/3d_256.json` | 3 | 144 | PM | fixed dt=0.02 | float32 |
+| `configs/p3m_adaptive.json` | 2 | 64 | PM | adaptive (CFL) | float32 |
+| `configs/par_files/high_res.json` | 2 | 1024 | PM | fixed dt=0.001 | float32 |
+| `configs/par_files/3d_heigh_res.json` | 3 | 128 | PM | fixed dt=0.02 | float32 |
+| `configs/par_files/3d_heigh_res_p3m.json` | 3 | 128 | P3M | fixed dt=0.02 | float32 |
+| `configs/par_files/3d_visual.json` | 3 | 144 | PM | adaptive (CFL) | float32 |
+| `configs/par_files/p3m_diff.json` | 2 | 16 | P3M | fixed dt=0.02 | float64 |
 
 ---
 
@@ -272,7 +283,7 @@ The following correctness issues were identified and resolved:
 
 ![Density Evolution (High Resolution)](op/density_evolution.png)
 
-Reference config: `configs/high_res.json`.
+Reference config: `configs/par_files/high_res.json`.
 Model used: standard flat LambdaCDM cosmology with `H0 = 68.0`, `OmegaM = 0.31`, `OmegaL = 0.69`.
 
 ---

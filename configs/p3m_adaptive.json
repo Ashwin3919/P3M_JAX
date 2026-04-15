@@ -7,7 +7,6 @@
     "a_start": 0.02,
     "a_end": 1.0,
     "power_index": -0.5,
-    "live_plot": false,
     "H0": 70.0,
     "OmegaM": 1.0,
     "OmegaL": 0.0,

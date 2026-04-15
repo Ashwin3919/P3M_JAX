@@ -10,9 +10,8 @@
     "C_cfl": 0.3,
     "dt_min": 0.0005,
     "dt_max": 0.02,
-    "n_chunks": 6,              /*#"oom_threshold_gb": 10, for bigger size of chunks so final plots can be done*/
+    "n_chunks": 6,
     "power_index": -1.0,
-    "live_plot": false,
     "H0": 70.0,
     "OmegaM": 0.6,
     "OmegaL": 0.4,

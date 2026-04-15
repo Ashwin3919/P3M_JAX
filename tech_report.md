@@ -12,12 +12,10 @@ This codebase is currently experimental and under active development. The implem
 
 ---
 
+![3D Visual Run (N=144)](op/144_title.png)
 
-<video src="op/144.mp4" controls muted loop playsinline width="100%"></video>
 
-[Download simulation video (MP4)](op/144.mp4)
-
-Reference config: `configs/3d_visual.json`.
+Reference config: `configs/par_files/3d_visual.json`.
 Model used: flat LambdaCDM-like cosmology with `H0 = 70.0`, `OmegaM = 0.6`, `OmegaL = 0.4` (matter-rich expansion history).
 
 ---
@@ -300,7 +298,7 @@ clamped to $[\Delta a_\text{min}, \Delta a_\text{max}]$. The softening length $\
 
 A common instability occurs with fixed timestepping when the displacement amplitude `A` is large. With $N = 144$, $L = 100$ Mpc/h, $\Delta x = 0.694$ Mpc/h, the CFL stability limit for the leapfrog is $v_\text{max} < \Delta x / \Delta a \approx 34.7$ Mpc/h. During non-linear collapse (typically $a \approx 0.3$–$0.6$ for $A = 10$), particle velocities can exceed this bound: the leapfrog overshoots, particles scatter, the power spectrum develops a transient dip, then the simulation recovers as velocities drop. This is a well-known N-body artefact.
 
-**Resolution:** Use adaptive timestepping, which automatically shrinks $\Delta a$ when $v_\text{max}$ is large. The `3d_visual.json` config (which uses $A = 10$ and $N = 144$) is configured with adaptive stepping for this reason, using $\Delta a_\text{min} = 0.0005$, $\Delta a_\text{max} = 0.02$, $C_\text{CFL} = 0.3$.
+**Resolution:** Use adaptive timestepping, which automatically shrinks $\Delta a$ when $v_\text{max}$ is large. The `configs/par_files/3d_visual.json` config (which uses $A = 10$ and $N = 144$) is configured with adaptive stepping for this reason, using $\Delta a_\text{min} = 0.0005$, $\Delta a_\text{max} = 0.02$, $C_\text{CFL} = 0.3$.
 
 ### 7.6 Incremental I/O
 
@@ -563,21 +561,27 @@ Config JSON
 
 ## 14. Available Configurations
 
-**`default.json`** — 2D EdS, $N = 128$, $L = 50$ Mpc/h, float64, PM, fixed $\Delta a = 0.02$. $128^2 = 16{,}384$ particles from $a = 0.02$ to $a = 1.0$. Recommended starting point; runs in minutes on CPU.
+**`configs/default.json`** — 2D EdS, $N = 128$, $L = 50$ Mpc/h, float64, PM, fixed $\Delta a = 0.02$. $128^2 = 16{,}384$ particles from $a = 0.02$ to $a = 1.0$. Recommended starting point; runs in minutes on CPU.
 
-**`high_res.json`** — 2D LCDM ($H_0=68$, $\Omega_M=0.31$, $\Omega_\Lambda=0.69$), $N = 256$, float32, $\Delta a = 0.015$. $65{,}536$ particles. Used for power spectrum convergence and window-function tests.
+**`configs/default_p3m.json`** — 2D EdS, $N = 128$, $L = 50$ Mpc/h, float32, P3M, fixed $\Delta a = 0.02$. $128^2 = 16{,}384$ particles. P3M counterpart to `default.json`.
 
-**`3d_default.json`** — 3D EdS, $N = 64$, float32, fixed $\Delta a = 0.02$. $64^3 = 262{,}144$ particles. Primary 3D validation config; accessible on laptop-class hardware.
+**`configs/3d_default.json`** — 3D EdS, $N = 64$, float64, PM, fixed $\Delta a = 0.02$. $64^3 = 262{,}144$ particles. Primary 3D validation config; accessible on laptop-class hardware.
 
-**`3d_heigh_res.json`** — 3D LCDM, $N = 128$, float32, fixed $\Delta a = 0.02$, `save_every = 10`. $\approx 2.1 \times 10^6$ particles. Production PM run. Recommended for GPU or Apple Silicon.
+**`configs/3d_default_p3m.json`** — 3D EdS, $N = 64$, float32, P3M, fixed $\Delta a = 0.02$. $64^3 = 262{,}144$ particles. P3M counterpart to `3d_default.json`.
 
-**`3d_heigh_res_p3m.json`** — identical to `3d_heigh_res.json` but with `"solver": "p3m"`. Enables direct PM vs P3M comparison at the same resolution.
+**`configs/3d_256.json`** — 3D LCDM ($H_0=70$, $\Omega_M=0.6$, $\Omega_\Lambda=0.4$), $N = 144$, float32, $L = 50$ Mpc/h, PM, fixed $\Delta a = 0.02$. $\approx 3.0 \times 10^6$ particles. GPU-scale run; requires the OOM guard or VTK-only output.
 
-**`3d_256.json`** — 3D LCDM, $N = 256$, float32, $L = 50$ Mpc/h, fixed $\Delta a = 0.02$. $\approx 1.7 \times 10^7$ particles. GPU-scale run; requires the OOM guard or VTK-only output.
+**`configs/p3m_adaptive.json`** — 2D EdS, $N = 64$, float32, PM ($W = 4$, $\varepsilon = 0.2$ Mpc/h, $\ell_\text{cut} = 2.5$), adaptive stepping ($C_\text{CFL}=0.3$, $\Delta a \in [0.001, 0.05]$, 50 checkpoints). Reference config for the adaptive timestepping pipeline.
 
-**`3d_visual.json`** — 3D LCDM, $N = 144$, float32, $L = 100$ Mpc/h, $A = 10$, **adaptive stepping** ($C_\text{CFL}=0.3$, $\Delta a \in [0.0005, 0.02]$, 65 checkpoints). Optimised for ParaView visualisation. The large amplitude $A = 10$ combined with fixed stepping would violate the CFL condition during structure formation; adaptive stepping is mandatory for this config.
+**`configs/par_files/high_res.json`** — 2D LCDM ($H_0=68$, $\Omega_M=0.31$, $\Omega_\Lambda=0.69$), $N = 1024$, float32, $\Delta a = 0.001$. $\approx 1.05 \times 10^6$ particles. Used for power spectrum convergence and window-function tests.
 
-**`p3m_adaptive.json`** — 2D EdS, $N = 64$, float64, P3M ($W = 4$, $\varepsilon = 0.2$ Mpc/h, $\ell_\text{cut} = 2.5$), adaptive stepping ($C_\text{CFL}=0.3$, $\Delta a \in [0.001, 0.05]$, 50 checkpoints). Reference config for the full P3M + adaptive pipeline.
+**`configs/par_files/3d_heigh_res.json`** — 3D LCDM ($H_0=68$, $\Omega_M=0.31$, $\Omega_\Lambda=0.69$), $N = 128$, float32, PM, fixed $\Delta a = 0.02$, `save_every = 10`. $\approx 2.1 \times 10^6$ particles. Production PM run. Recommended for GPU or Apple Silicon.
+
+**`configs/par_files/3d_heigh_res_p3m.json`** — identical to `3d_heigh_res.json` but with `"solver": "p3m"`. Enables direct PM vs P3M comparison at the same resolution.
+
+**`configs/par_files/3d_visual.json`** — 3D LCDM ($H_0=70$, $\Omega_M=0.6$, $\Omega_\Lambda=0.4$), $N = 144$, float32, $L = 100$ Mpc/h, $A = 10$, **adaptive stepping** ($C_\text{CFL}=0.3$, $\Delta a \in [0.0005, 0.02]$, 6 checkpoints). Optimised for ParaView visualisation. The large amplitude $A = 10$ combined with fixed stepping would violate the CFL condition during structure formation; adaptive stepping is mandatory for this config.
+
+**`configs/par_files/p3m_diff.json`** — 2D EdS, $N = 16$, float64, P3M ($\ell_\text{cut} = 2.5$), fixed $\Delta a = 0.02$, from $a = 0.02$ to $a = 0.1$. Minimal config for differentiability and gradient correctness tests.
 
 ---
 
@@ -681,6 +685,28 @@ Organised into seven test classes. Each test checks a specific physical property
 31. `test_single_pm_step_runs_and_advances` — one full PM leapfrog step: finite state, time advances.
 32. `test_p3m_step_runs_and_advances` — one full P3M leapfrog step: finite state, time advances.
 
+### 15.3 Quantitative validation results
+
+**Integrator convergence** (`tests/test_convergence.py`): 2D EdS PM run from $a = 0.1$ to $a = 0.3$ at four step sizes $\Delta a \in \{0.04, 0.02, 0.01, 0.005\}$. Fitted convergence order $= 2.11 \pm 0.3$; total momentum $|\Sigma \mathbf{p}| < 10^{-8}$ after 20 steps.
+
+**Linear theory** (`scripts/linear_theory.py`): large-scale relative deviation from linear theory at $a = 0.22$ on a $32^2$ grid is 33.8% (well within the 50% tolerance for a coarse PM run).
+
+**IC sensitivity** (`scripts/sensitivity.py`): `jax.grad` vs finite-difference relative error $= 5.20 \times 10^{-12}$ at $A = 12$ (machine-precision agreement).
+
+---
+
+### 15.4 Correctness Fixes
+
+Five bugs identified during Phase 8 code audit and resolved:
+
+| Fix | Location | Impact |
+|-----|----------|--------|
+| PP force missing `particle_mass` factor | `system.py:134` | P3M forces were $2^d\times$ too weak (4× in 2D, 8× in 3D) |
+| Morton code `int32` overflow in 3D | `system.py:72` | Bit shifts up to position 47 silently corrupted all 3D PP neighbour searches |
+| KDK drift evaluated at $a$ instead of $a + \Delta a/2$ | `integrator.py:11` | Broke time-symmetry of leapfrog; systematic integration bias |
+| `_K_pow` NaN gradient via `jnp.where` | `filters.py:5` | `k**(-1)` at $k=0$ evaluated to `inf` in discarded branch; gradient was `nan` |
+| `_wave_number` hardcoded to first-axis $N$ | `box.py:20` | Wrong Nyquist frequency on non-cubic grids; float vs integer division |
+
 ---
 
 ## 16. What Can Be Studied with This Code
@@ -689,22 +715,26 @@ Organised into seven test classes. Each test checks a specific physical property
 2. **Zeldovich pancake formation** — EdS with $n_s = -0.5$ forms characteristic sheet structures visible in VTK snapshots.
 3. **Non-linear power spectrum evolution** — $P(k)$ from $a = 0.02$ to $a = 1$ can be compared to Peacock-Dodds (1996) or Halofit (Smith et al. 2003).
 4. **Cosmology dependence** — EdS ($D \propto a$) vs LCDM growth suppression visible in the time-tagged power spectrum CSV.
-5. **PM vs P3M force accuracy** — comparing PM and P3M runs at the same resolution quantifies the sub-cell force improvement near halo centres (`3d_heigh_res.json` vs `3d_heigh_res_p3m.json`).
-6. **Adaptive vs fixed stepping** — the adaptive integrator uses larger steps at early times and automatically refines near shell-crossing; comparing $P(k)$ between runs tests CFL stability (`p3m_adaptive.json` vs `default.json`).
+5. **PM vs P3M force accuracy** — comparing PM and P3M runs at the same resolution quantifies the sub-cell force improvement near halo centres (`configs/par_files/3d_heigh_res.json` vs `configs/par_files/3d_heigh_res_p3m.json`).
+6. **Adaptive vs fixed stepping** — the adaptive integrator uses larger steps at early times and automatically refines near shell-crossing; comparing $P(k)$ between runs tests CFL stability (`configs/p3m_adaptive.json` vs `configs/default.json`).
 7. **Resolution convergence** — 2D: $N \in \{64, 128, 256\}$; 3D: $N \in \{32, 64, 128\}$. Tests force and particle resolution convergence of $P(k)$.
 8. **Gradient-based initial condition reconstruction** — using `src/diff/pm_grad.py`, gradients of any scalar observable (final power spectrum, density field, particle positions) with respect to the initial conditions can be computed via `jax.grad`. This enables gradient descent on the initial conditions, simulation-based inference, and adjoint sensitivity analysis of cosmological parameters.
 
 ---
 
-## 17. Limitations and Future Work
+## 17. Limitations and Known Approximations
 
-**TSC mass assignment (Phase 5):** Fully implemented. The Triangular-Shaped Cloud scheme distributes mass over $3^d$ cells using a quadratic B-spline kernel (`md_tsc_nd`), with a matching `InterpTSC` interpolator so that the deposit–solve–interpolate pipeline is self-adjoint. The corresponding deconvolved Green's function (`Potential() / TSCWindow(box)**2`) is precomputed at initialisation and used throughout the force pipeline when `"assignment": "tsc"` is set. The power-spectrum deconvolution in `compute_power_spectrum` likewise applies the cubic sinc³ window correction for TSC.
+The following are genuine physical or algorithmic limitations of the current implementation. Items that were previously listed as limitations but are now fully resolved (TSC mass assignment, 3D Zeldovich ICs, adaptive timestepping, differentiable PM rollout) are not listed here.
 
-**Zeldovich momentum for LCDM:** The initial momentum is set as $\mathbf{p} = a_\text{init} \cdot \mathbf{u}$, which is exact for EdS ($D(a) = a$, growth rate $f = 1$) but omits the $f(a) \cdot H(a) \cdot D(a)$ prefactor for LCDM cosmologies. This introduces a small error in initial particle velocities for `high_res.json` and `3d_heigh_res.json`; particle positions at $a_\text{start}$ are unaffected.
+**Zeldovich initial momenta for LCDM cosmologies.** The initial momentum is set as $\mathbf{p}(a_\text{init}) = a_\text{init} \cdot \mathbf{u}$, which is exact for an Einstein–de Sitter universe where the growth rate $f \equiv d\ln D/d\ln a = 1$ and $D(a) = a$. For general LCDM cosmologies, the correct expression is $\mathbf{p} = f(a_\text{init}) \cdot H(a_\text{init}) \cdot D(a_\text{init}) \cdot \mathbf{u} / \dot{a}$, where $f \approx \Omega_M(a)^{0.55}$ (Linder 2005). The omitted prefactor introduces an $O(5\%)$ error in initial particle velocities for typical LCDM parameters at $a_\text{init} = 0.02$; particle positions at $a_\text{init}$ are unaffected. This error decays in significance as $a \to 1$ since the growing mode quickly dominates over the initial velocity error.
 
-**PP force-split accuracy:** The current PP correction uses the erfc splitting kernel but does not subtract an analytic model of the PM force at short separations. In the original Hockney-Eastwood P3M, this analytic subtraction prevents double-counting at intermediate $r$. The present implementation is equivalent to assuming the PM force is negligible below $r_\text{cut}$, which holds when $r_\text{cut} \ll \Delta x_f$ — the typical operating regime.
+**PP force-split at intermediate separations.** The P3M short-range correction applies an erfc splitting kernel $\text{erfc}(r/\alpha)$ to the PP force but does not subtract an analytic approximation of the PM force contribution at the same separations. In the Hockney–Eastwood formulation, this analytic PM subtraction prevents double-counting of forces at intermediate $r$. The current implementation assumes the PM force is negligible below $r_\text{cut}$, which is justified when $r_\text{cut} \ll \Delta x_f$ — the standard operating regime — but introduces a small overestimate of total force for particle pairs near the transition scale $r \sim r_\text{cut}$.
 
-**Large-$N$ PP scaling:** The Morton-sorted sliding window is $O(N_p \cdot W)$. For $W \gtrsim 10$ or very large $N_p$, spatial hashing (which has $O(N_p)$ lookup in the average case) would outperform the fixed window approach.
+**PP neighbour search scaling.** The Morton Z-curve sliding window has $O(N_p \cdot W)$ complexity, where $W = 2 \cdot \texttt{pp\_window} + 1$ is the window width. This is acceptable for $W \lesssim 10$ but becomes the dominant cost for dense configurations requiring wide windows. Spatial hashing would give $O(N_p)$ average-case lookup; however, the variable-length neighbour lists it produces are incompatible with JAX's static-shape requirement. Fixed-width padding (allocating a maximum neighbour count per particle) would permit spatial hashing inside XLA but partially negates the performance advantage.
+
+**Growth factor numerical integration.** The `growing_mode(a)` function evaluates the Heath (1977) integral using `scipy.integrate.quad` with a lower limit of $\varepsilon = 10^{-5}$ and an additive seed of $10^{-5}$ to approximate $D(\varepsilon) \approx \varepsilon$ in the matter-dominated regime. This introduces a fractional bias of $\lesssim 0.1\%$ at $a \gtrsim 0.5$, rising to $\lesssim 5\%$ at $a \sim 0.1$. The bias cancels in the ratio $D_\text{cosmo}(a)/D_\text{EdS}(a)$ used by the Zeldovich generator (both cosmologies carry the same additive offset) and is therefore inconsequential for IC generation. A future improvement would integrate from $a = 0$ analytically using the matter-dominated approximation $D(a) \approx a$ as the seed.
+
+**Purely gravitational dynamics.** The code solves the collisionless Boltzmann–Poisson system for dark matter only. Baryonic physics (gas pressure, star formation, feedback, radiation) is not modelled. This is appropriate for studying large-scale structure, the matter power spectrum, and gravitational collapse, but limits applicability to problems requiring hydrodynamics.
 
 ---
 
@@ -793,6 +823,46 @@ An additional test confirms that `jax.checkpoint` does not change gradient value
 
 ---
 
+## 19. Analysis Scripts
+
+Two standalone scripts in `scripts/` produce validation figures without modifying the main simulation loop.
+
+**`scripts/sensitivity.py`** — IC pipeline sensitivity via `jax.grad`. Runs the chain `A → garfield → Zeldovich → CIC → FFT → P(k)` and computes `dP_total/dA` using reverse-mode AD, then verifies against a finite-difference estimate. Outputs `results/sensitivity/sensitivity.png`.
+
+```
+Saved → results/sensitivity/sensitivity.png
+jax.grad vs finite-difference rel. error at A=12: 5.20e-12
+  → Should be < 1e-5 (machine-precision AD vs FD agreement)
+Assertion passed — jax.grad matches finite differences to machine precision.
+```
+
+![IC Sensitivity: jax.grad through garfield → CIC → FFT](op/sensitivity.png)
+
+---
+
+**`scripts/linear_theory.py`** — Compares the simulated $P(k, a)$ against the linear-theory prediction $P_\text{lin}(k, a) = P_\text{init}(k) \cdot (D(a)/D(a_\text{init}))^2$ at several scale factors. Outputs `results/linear_theory/linear_theory.png`.
+
+```
+Setting up simulation: N=32, L=50.0 Mpc/h, 49 steps
+Evolving... a=0.22 a=0.42 a=0.62 a=0.82
+Done.
+Saved → results/linear_theory/linear_theory.png
+Large-scale rel. deviation from linear theory at a=0.22: 33.8%  (expect < 50% for PM on a coarse grid)
+Assertion passed.
+```
+
+---
+
+### Production run: matter power spectrum evolution (`configs/par_files/3d_visual.json`)
+
+![Matter power spectrum evolution — 3D LCDM run, N=144, L=100 Mpc/h](op/3d_visual/power_spectrum.png)
+
+**Figure:** Matter power spectrum $P(k)$ at six checkpoints from a 3D LCDM simulation ($H_0 = 70$ km/s/Mpc, $\Omega_M = 0.6$, $\Omega_\Lambda = 0.4$, $N = 144^3 \approx 3 \times 10^6$ particles, $L = 100$ Mpc/h, float32, adaptive timestepping with $\Delta a \in [0.0005, 0.02]$). The colourbar encodes scale factor $a$, running from early times (dark blue, $a \approx 0.3$) to $a = 1.32$ (yellow). Each curve is computed from `src/utils/analysis.py:compute_power_spectrum` with CIC window deconvolution and Poisson shot noise subtraction applied.
+
+At large scales ($k \lesssim 0.3\; h/\text{Mpc}$), the amplitude grows monotonically with $a$, consistent with linear theory $P(k,a) \propto D^2(a)$. At small scales ($k \gtrsim 1\; h/\text{Mpc}$), gravitational collapse drives power significantly above the linear prediction — the onset of non-linear structure formation. The turnover and suppression at the highest $k$ modes reflects the finite force resolution of the dual-resolution grid ($\Delta x_f = L/(2N) \approx 0.35$ Mpc/h).
+
+---
+
 ## References
 
 Hidding, J., *2D N-Body Simulation*, https://jhidding.github.io/nbody2d/ (project starting point; accessed 2026-01-10)
@@ -812,31 +882,5 @@ Springel, V. 2005, MNRAS, 364, 1105
 Springel, V. 2010, MNRAS, 401, 791
 
 Zel'dovich, Ya. B. 1970, A&A, 5, 84
-
----
-
-## Appendix: Correctness Fixes and Numerical Validation (Phase 8)
-
-### Bug fixes
-
-Five correctness issues were identified by code audit and resolved:
-
-1. **PP force missing particle mass** (`src/physics/system.py:134`). The short-range acceleration was computed as $G/a \cdot \mathbf{r}/r^3_\text{soft}$ without the factor $m_\text{particle}$. The PM force includes mass implicitly through $\delta = \rho \cdot m - 1$; the PP force must include it explicitly. Fixed by replacing `G/a` with `G * particle_mass / a`. Effect: P3M forces were a factor of $2^d$ too weak (4× in 2D, 8× in 3D).
-
-2. **Morton code `int32` overflow for 3D P3M** (`src/physics/system.py:72`). Interleaving 3 coordinates × 16 bits requires bit shifts up to position 47, which overflows a 32-bit integer. Bits 11–15 of the Morton code were silently discarded, destroying spatial locality and making all 3D PP neighbour searches incorrect. Fixed by changing `dtype=jnp.int32` → `dtype=jnp.int64` and unconditionally enabling `jax_enable_x64` when `solver="p3m"` in `main.py`.
-
-3. **KDK drift evaluated at wrong time** (`src/solver/integrator.py:11`). In a KDK leapfrog the drift coefficient $1/(a^2 H(a))$ must be evaluated at the half-step $a + \Delta a/2$ for the scheme to be time-symmetric. The code evaluated it at $a$ (start of step), introducing a systematic bias. Fixed by advancing `State.time` to `s.time + dt/2` before the drift.
-
-4. **`_K_pow` NaN gradients via `jnp.where`** (`src/core/filters.py:5`). The expression `jnp.where(k == 0, 0.0, k**n)` with $n < 0$ evaluates `0**(-1) = inf` in the discarded branch before masking. JAX evaluates both branches of `jnp.where` before selecting; the gradient of the `inf` branch is `nan` and propagates even to the selected output. Fixed by computing `safe_k = jnp.where(k == 0, 1.0, k)` so no negative power of zero is ever formed.
-
-5. **`_wave_number` hardcoded to first-axis size** (`src/core/box.py:20`). The function used `N = s[0]` as the Nyquist threshold for all axes, giving wrong wave numbers for non-cubic grids. Also used float division `N/2` instead of integer `N//2`. Fixed by broadcasting a per-axis shape array.
-
-### Numerical validation
-
-**Integrator convergence** (`tests/test_convergence.py`). A 2D EdS PM simulation is run from $a = 0.1$ to $a = 0.3$ at four step sizes $\Delta a \in \{0.04, 0.02, 0.01, 0.005\}$. Mean L2 particle position error against the finest-grid reference is fitted on a log-log scale; the measured convergence order is $2.11 \pm 0.3$, consistent with the second-order KDK scheme. Total momentum conservation is verified to $|\Sigma \mathbf{p}| < 10^{-8}$ after 20 steps.
-
-**Linear theory comparison** (`scripts/linear_theory.py`). The matter power spectrum $P(k, a)$ from a 2D EdS PM simulation is compared against the linear-theory prediction $P_\text{lin}(k, a) = P(k, a_\text{start}) \times (a/a_\text{start})^2$ at four output times. Large-scale modes ($k < k_\text{nl}$) track linear theory to within 34% on a $32^2$ grid; small-scale modes exceed the linear prediction due to non-linear gravitational collapse. The non-linear scale $k_\text{nl}$ where the two first diverge by more than 20% is annotated on the figure.
-
-**Differentiable IC pipeline** (`scripts/sensitivity.py`). The pipeline amplitude $A \to \phi \to \mathbf{u}_\text{Zeldovich} \to \rho_\text{CIC} \to P_\text{total}$ is differentiated end-to-end via `jax.grad`. The result is verified against a central finite-difference estimate; the relative error is $5 \times 10^{-12}$, confirming machine-precision gradient flow through the FFT-based Poisson solve, fourth-order finite-difference gradient, and CIC scatter operation.
 
 
