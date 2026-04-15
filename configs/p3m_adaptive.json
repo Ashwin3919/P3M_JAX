@@ -14,7 +14,7 @@
     "vtk_freq": 5,
     "save_power_spectrum": true,
     "precision": "float32",
-    "solver": "pm",
+    "solver": "p3m",
     "pp_window": 4,
     "pp_softening": 0.2,
     "pp_cutoff": 2.5,

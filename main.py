@@ -35,6 +35,26 @@ _DTYPE_MAP = {
     'float64': jnp.float64,
 }
 
+
+def _configure_jax(config_path: str) -> None:
+    """Read precision/solver from config and enable x64 BEFORE any JAX operation.
+
+    jax.config.update("jax_enable_x64", True) is a no-op (or warns) on some
+    backends after the first JAX computation has been traced.  This function
+    reads only the two relevant keys directly from raw JSON — before any
+    jax.numpy usage — so the flag is guaranteed to be set in time.
+
+    Must be called from __main__ before run_simulation().
+    """
+    import json as _json
+    with open(config_path, 'r', encoding='utf-8') as _f:
+        _cfg = _json.load(_f)
+    precision_str = _cfg.get('precision', 'float64')
+    solver        = _cfg.get('solver', 'pm')
+    if precision_str == 'float64' or solver == 'p3m':
+        import jax as _jax
+        _jax.config.update("jax_enable_x64", True)
+
 def run_simulation(config_path):
     # 1. Load configuration
     config = load_config(config_path)
@@ -45,10 +65,18 @@ def run_simulation(config_path):
     if precision_str not in _DTYPE_MAP:
         raise ValueError(f"precision must be one of {list(_DTYPE_MAP)}, got '{precision_str}'")
     dtype = _DTYPE_MAP[precision_str]
-    # Enable 64-bit for float64 precision, and also whenever P3M is used since
-    # Morton Z-curve codes require int64 to avoid overflow in 3D (bit shifts up to 47).
+    # Guard: warn if x64 was not pre-configured via _configure_jax() before
+    # run_simulation() was called (e.g. from a notebook or external script).
+    # At this point JAX may already have traced operations in 32-bit mode.
     if precision_str == 'float64' or config.get('solver', 'pm') == 'p3m':
-        jax.config.update("jax_enable_x64", True)
+        if not jax.config.jax_enable_x64:
+            import warnings
+            warnings.warn(
+                "jax_enable_x64 is not set but float64/p3m was requested. "
+                "Call _configure_jax(config_path) before run_simulation() to "
+                "ensure x64 is enabled before any JAX operation.",
+                stacklevel=2,
+            )
     if precision_str == 'float16':
         print("WARNING: float16 precision is numerically unstable for N-body simulations. Use float32 or float64.")
 
@@ -103,7 +131,15 @@ def run_simulation(config_path):
         C_cfl   = config.get('C_cfl', 0.3)
         dt_min  = jnp.array(config.get('dt_min', 0.001), dtype=dtype)
         dt_max  = jnp.array(config.get('dt_max', 0.05), dtype=dtype)
-        eps     = jnp.array(pp_soft, dtype=dtype)   # use PP softening as the resolution scale for CFL
+        # CFL length scale: for p3m the softening sets the sub-cell resolution
+        # that the PP force resolves, so it is the correct scale.  For pm there
+        # is no PP force; pp_softening may not even be set and defaults to 0.1
+        # Mpc/h which is unrelated to the actual force grid spacing.  Use the
+        # force grid cell size (L / 2N) as the natural PM resolution scale.
+        if solver == 'p3m':
+            eps = jnp.array(pp_soft, dtype=dtype)
+        else:
+            eps = jnp.array(force_box.res, dtype=dtype)
         n_chunks = config.get('n_chunks', 50)   # number of output checkpoints
         chunk_da = (config['a_end'] - config['a_start']) / n_chunks
 
@@ -112,7 +148,7 @@ def run_simulation(config_path):
                     C_cfl=C_cfl, eps=eps, dt_min=dt_min, dt_max=dt_max)
         )
         print(f"Timestepping: ADAPTIVE  C_cfl={C_cfl}  dt=[{dt_min}, {dt_max}]  "
-              f"n_chunks={n_chunks}")
+              f"eps={float(eps):.4f} Mpc/h  n_chunks={n_chunks}")
 
     else:   # fixed dt
         dt = jnp.array(config['dt'], dtype=dtype)
@@ -155,12 +191,15 @@ def run_simulation(config_path):
         saved_pos.append(pos_np)
         saved_mom.append(mom_np)
 
-        # Density on mass grid for I/O — use same scheme as force calculation
+        # Density on mass grid for I/O — use same scheme as force calculation.
+        # md_cic_nd / md_tsc_nd deposit N^dim particles with unit weights onto
+        # N^dim cells, so the raw output already has mean = 1 = rho/rho_bar
+        # (i.e. it IS 1 + delta).  Do NOT add 1.0 here.
         x_grid = state.position / B_mass.res
         if assignment == "tsc":
-            rho = np.array(md_tsc_nd(B_mass.shape, x_grid) + 1.0)
+            rho = np.array(md_tsc_nd(B_mass.shape, x_grid))
         else:
-            rho = np.array(md_cic_nd(B_mass.shape, x_grid) + 1.0)
+            rho = np.array(md_cic_nd(B_mass.shape, x_grid))
 
         if config.get('save_vtk') and chunk_idx % vtk_freq == 0:
             write_vtk_particles(pos_np, mom_np, a_val, results_dir, config['name'])
@@ -230,4 +269,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.json")
     args = parser.parse_args()
+    _configure_jax(args.config)   # must precede all JAX usage
     run_simulation(args.config)

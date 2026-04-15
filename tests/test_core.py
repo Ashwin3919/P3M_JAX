@@ -464,3 +464,89 @@ def test_3d_pm_simulation_advances_and_stays_finite():
     assert jnp.all(jnp.isfinite(state.position)), "3D positions contain NaN/Inf"
     assert jnp.all(jnp.isfinite(state.momentum)), "3D momenta contain NaN/Inf"
     assert float(state.time) > 0.02
+
+
+# ---------------------------------------------------------------------------
+# Bug-fix regression tests (Bugs 1–4)
+# ---------------------------------------------------------------------------
+
+def test_rho_io_mean_is_unity_cic():
+    """md_cic_nd output has mean=1 for a uniform grid — no +1.0 should be added.
+
+    Bug 1: main.py previously wrote md_cic_nd(...) + 1.0 for the I/O density,
+    shifting the mean from 1 to 2 and corrupting VTK density files.
+    """
+    N = 8
+    box = Box(2, N, 10.0)
+    idx = jnp.arange(N, dtype=jnp.float64)
+    gx, gy = jnp.meshgrid(idx, idx)
+    # Uniform grid: N^2 particles, each offset 0.5 cells to sit at cell centres
+    pos = jnp.stack([gx.ravel(), gy.ravel()], axis=-1) + 0.5
+    rho = md_cic_nd(box.shape, pos)
+    assert jnp.allclose(rho.mean(), 1.0, atol=1e-5), (
+        f"CIC density mean = {float(rho.mean()):.6f}, expected 1.0. "
+        "The raw md_cic_nd output is already rho/rho_bar; do not add +1.0."
+    )
+
+
+def test_rho_io_mean_is_unity_tsc():
+    """md_tsc_nd output has mean=1 for a uniform grid — no +1.0 should be added.
+
+    Mirrors test_rho_io_mean_is_unity_cic for the TSC assignment scheme.
+    """
+    N = 8
+    box = Box(2, N, 10.0)
+    idx = jnp.arange(N, dtype=jnp.float64)
+    gx, gy = jnp.meshgrid(idx, idx)
+    pos = jnp.stack([gx.ravel(), gy.ravel()], axis=-1) + 0.5
+    rho = md_tsc_nd(box.shape, pos)
+    assert jnp.allclose(rho.mean(), 1.0, atol=1e-5), (
+        f"TSC density mean = {float(rho.mean()):.6f}, expected 1.0. "
+        "The raw md_tsc_nd output is already rho/rho_bar; do not add +1.0."
+    )
+
+
+def test_p3m_adaptive_config_solver_is_p3m():
+    """p3m_adaptive.json must declare solver='p3m', not 'pm'.
+
+    Bug 2: the config was named p3m_adaptive and contained PP parameters but
+    solver was set to 'pm', silently running pure PM and ignoring all PP params.
+    """
+    from src.utils.config_parser import load_config
+    config = load_config("configs/p3m_adaptive.json")
+    assert config["solver"] == "p3m", (
+        f"Expected solver='p3m' in p3m_adaptive.json, got '{config['solver']}'. "
+        "PP parameters are ignored when solver='pm'."
+    )
+    # PP params must be present so the config parser validates r_cut < L/2
+    for key in ("pp_window", "pp_softening", "pp_cutoff"):
+        assert key in config, f"Missing expected P3M parameter '{key}' in p3m_adaptive.json"
+
+
+def test_cfl_eps_scales_dt_linearly():
+    """compute_dt output scales linearly with eps — so the correct eps must be passed.
+
+    Bug 3: main.py always used pp_softening (default 0.1 Mpc/h) as the CFL
+    length scale even for pm-only runs where force_box.res is the right scale.
+    dt = C_cfl * eps / v_max, so if eps is wrong by 4x the step is wrong by 4x.
+    """
+    from src.physics.cosmology import EDS_PRESET
+    from src.solver.integrator import compute_dt
+    from src.solver.state import State
+
+    pos = jnp.zeros((8, 2), dtype=jnp.float64)
+    mom = jnp.ones((8, 2), dtype=jnp.float64)
+    s   = State(jnp.array(0.5), pos, mom)
+
+    eps_a = 0.1    # typical pp_softening (old, always-used value)
+    eps_b = 0.39   # typical force_box.res for N=64, L=50 (correct PM scale)
+
+    dt_a = float(compute_dt(s, EDS_PRESET, C_cfl=0.3, eps=eps_a, dt_min=1e-9, dt_max=1e9))
+    dt_b = float(compute_dt(s, EDS_PRESET, C_cfl=0.3, eps=eps_b, dt_min=1e-9, dt_max=1e9))
+
+    expected_ratio = eps_b / eps_a
+    actual_ratio   = dt_b / dt_a
+    assert abs(actual_ratio - expected_ratio) < 1e-6, (
+        f"dt should scale linearly with eps: got ratio={actual_ratio:.6f}, "
+        f"expected {expected_ratio:.6f}. Using the wrong eps gives wrong step sizes."
+    )
