@@ -253,17 +253,6 @@ At large scales (small k) and early times the simulated P(k) should track the li
 python scripts/linear_theory.py   # → results/linear_theory/linear_theory.png
 ```
 
-### Bug fixes applied
-
-The following correctness issues were identified and resolved:
-
-| Fix | Location | Impact |
-|-----|----------|--------|
-| PP force missing `particle_mass` factor | `system.py:134` | P3M forces were 4× (2D) / 8× (3D) too weak |
-| Morton code `int32` overflow in 3D | `system.py:72` | Spatial sorting silently corrupted for 3D P3M |
-| KDK drift evaluated at wrong time | `integrator.py:11` | Drift coefficient used `a` instead of `a + dt/2`, breaking time-centering |
-| `_K_pow` NaN gradients via `jnp.where` | `filters.py:5` | `k**(-1)` at `k=0` produced `inf` before masking; gradient was `nan` |
-| `_wave_number` hardcoded first-axis N | `box.py:20` | Wrong Nyquist for non-cubic grids; float vs int comparison |
 
 ---
 
